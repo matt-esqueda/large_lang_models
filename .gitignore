@@ -1,0 +1,2 @@
+# ignore juptyer notebook checkpoint files
+.ipynb_checkpoints/
