@@ -17,7 +17,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(device)
 
 # hyperparameters
-batch_size = args.batch_size
+batch_size = int(args.batch_size)
 block_size = 64
 max_iters = 200
 learning_rate = 3e-4
@@ -249,5 +249,5 @@ for iter in range(max_iters):
 print(loss.item())
 
 with open('model_01.pkl', 'wb') as  f:
-    pickel.dump(model, f)
+    pickle.dump(model, f)
 print('model saved')
