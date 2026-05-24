@@ -187,8 +187,10 @@ class GPTLanguageModel(nn.Module):
     def generate(self, index, max_new_tokens):
         # index is (B, T) array of indices in the current context
         for _ in range(max_new_tokens):
+            # crop context to block_size
+            index_cond = index[:, -block_size:]
             # get the predictions
-            logits, loss = self.forward(index)
+            logits, loss = self.forward(index_cond)
             # focus only on the last time step
             logits = logits[:,-1,:]  # becomes (B,C)
             # apply softmax to get probabilities
@@ -226,6 +228,6 @@ print(loss.item())
 
 prompt = 'Hello! Can you see me?'
 context = torch.zeros((1,1), dtype=torch.long, device=device)
-generated_chars = decode(m.generate(context.unsqueeze(0), max_new_tokens=100)[0].tolist())
+generated_chars = decode(m.generate(context, max_new_tokens=100)[0].tolist())
 
 print(generated_chars)
