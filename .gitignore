@@ -1,2 +1,14 @@
 # ignore juptyer notebook checkpoint files
 .ipynb_checkpoints/
+
+venv/
+.venv/
+env/
+ENV/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+*.pth
+*.pt
