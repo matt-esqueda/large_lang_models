@@ -1,14 +1,25 @@
 # ignore juptyer notebook checkpoint files
 .ipynb_checkpoints/
 
+# Data files
+train_split.txt
+val_split.txt
+vocab.txt
+output_train.txt
+output_val.txt
+
+# Model files
+*.pkl
+*.pth
+*.pt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
 venv/
 .venv/
 env/
 ENV/
-
-__pycache__/
-*.pyc
-*.pyo
-*.pkl
-*.pth
-*.pt

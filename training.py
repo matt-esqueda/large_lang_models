@@ -29,7 +29,7 @@ dropout = 0.2
 
 
 chars = ''
-with open('openwebtext/vocab.txt', 'r', encoding='utf-8') as f:  # set filepath as needed for vocab.txt
+with open('vocab.txt', 'r', encoding='utf-8') as f:  # set filepath as needed for vocab.txt
     text = f.read()
     chars = sorted(list(set(text)))
 
@@ -49,7 +49,7 @@ def get_random_chunk(split):
     
     with open(filename, 'rb') as f:
         
-        with mmap.mmap(f.fileno(), access=mmap.ACCESS_READ) as mm:
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
             # determine the file size and a random position to start reading
             file_size = len(mm)
             start_pos = random.randint(0, (file_size) - block_size*batch_size)
