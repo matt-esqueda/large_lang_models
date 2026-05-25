@@ -131,20 +131,134 @@ class GPTLanguageModel(nn.Module):
             loss = F.cross_entropy(logits,targets)
         return logits, loss
     
-    def generate(self, index, max_new_tokens):
-        """Generate new tokens given a context"""
-        # index is (B, T) array of indices in the current context
+    def generate(self, index, max_new_tokens, temperature=1.0, top_k=None, top_p=None, repetition_penalty=1.0):
+        """Generate new tokens given a context with advanced sampling strategies
+        
+        Args:
+            index: (B, T) tensor of indices in current context
+            max_new_tokens: number of tokens to generate
+            temerapture: sampling temperature (higher = more random)
+                        0.0 greedy (argmax), 1.0 = normal, >1.0 = more random
+            top_k: if set, only sample from top k most likely tokens
+            top_p: if set, nucleus sampling - sample from smallest set with cumulative prob >= p
+            repetition_penalty: penalty for repeating tokens (>1.0 discourages repetition)
+        
+        Returns:
+            (B, T+max_new_tokens) tensor of generated indices
+        """
         for _ in range(max_new_tokens):
             # crop context to block_size
             index_cond = index[:, -self.block_size:]
             # get the predictions
             logits, loss = self.forward(index_cond)
-            # focus only in the last time step
-            logits = logits[:, -1, :]                               # becomes (B,C)
-            # apply softmax to get probabilities
-            probs = F.softmax(logits, dim=-1)                       # (B,C)
-            # sample from the distribution
-            index_next = torch.multinomial(probs,num_samples=1)     # (B,1)
+            # focus only on the last time step
+            logits = logits[:, -1, :]                                   # becomes (B,C)
+            # apply repetition penalty
+            if repetition_penalty != 1.0:
+                logits = self._apply_repetition_penalty(logits, index, repetition_penalty)
+            # apply temperature
+            if temperature == 0.0:
+                # greedy sampling (deterministic)
+                index_next = torch.argmax(logits, dim=-1, keepdim=True)
+            else:
+                # scale logits by temperature
+                logits = logits / temperature
+                # apply top-k filtering
+                if top_k is not None:
+                    logits = self._top_k_filtering(logits, top_k)
+                # apply top-p (nucleus) filtering
+                if top_p is not None:
+                    logits = self._top_p_filtering(logits,top_p)
+                # apply softmax to get probabilities
+                probs = F.softmax(logits, dim=-1)                       # (B,C)
+                # sample from the distribution
+                index_next = torch.multinomial(probs,num_samples=1)     # (B,1)
             # append sampled index to the running sequence
-            index = torch.cat((index, index_next), dim=1)           # (B,T+1)
+            index = torch.cat((index, index_next), dim=1)               # (B,T+1)
         return index
+    
+    def _apply_repetition_penalty(self, logits, previous_tokens, penalty):
+        """
+        Apply repetition penalty to logits
+
+        Args:
+            logits: (B, C) unnormalized log probabilities
+            previous_tokens: (B, T) previously generated tokens
+            penalty: repitition penalty factor (>1.0 to discourage repetition)
+
+        Returns:
+            Modified logits with repetition penalty applied
+        """
+        batch_size, vocab_size = logits.shape
+
+        for i in range(batch_size):
+            # Get unique tokens in the sequence
+            unique_tokens = torch.unique(previous_tokens[i])
+
+            # Apply penalty to previously seen tokens
+            for token in unique_tokens:
+                # If logit is positive, divide by penalty; if negative, multiply by penalty
+                if logits[i, token] > 0:
+                    logits[i, token] /= penalty
+                else:
+                    logits[i, token] *= penalty
+        
+        return logits
+    
+    def _top_k_filtering(self, logits, top_k):
+        """
+        Filter logits to only keep top k tokens
+
+        Args:
+            logits: (B, C) unormalized log probabilities
+            top_k: number of top tokens to keep
+
+        Returns:
+            Filitered logits with only top k values, rest set to -inf
+        """
+        top_k = min(top_k, logits.size(-1))                             # Safety check
+
+        # Get top k values and indices
+        top_k_values, top_k_indices = torch.topk(logits, top_k, dim=-1)
+
+        # Create a mask for values below the k-th largest
+        indices_to_remove = logits < top_k_values[:, -1, None]
+
+        # Set filtered values to -inf (will have ~0 probability after softamax)
+        logits = logits.masked_fill(indices_to_remove, float('-inf'))
+
+        return logits
+    
+    def _top_p_filtering(self, logits, top_p):
+        """
+        Nucleus sampling: filter logits to keep tokens with cumalative probability >= top_p
+
+        Args:
+            logits: (B, C) unnormalized log probabilities
+            top_p: cumulative probability threshold (e.g., 0.9)
+        
+        Returns:
+            Filtered logits with only nuclues tokens, rest set to -inf
+        """
+        # Sort logits in descending order
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+
+        # Compute cumulative probabilities
+        cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+        # Remove tokens with cumulative probability above the threshold
+        sorted_indices_to_remove = cumulative_probs > top_p
+
+        # Shift the indices to the right to keep the first token above threshold
+        sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
+        sorted_indices_to_remove[:, 0] = False
+
+        # Create mask in original order
+        indices_to_remove = torch.zeros_like(logits, dtype=torch.bool)
+        for i in range(logits.size(0)):
+            indices_to_remove[i, sorted_indices[i]] = sorted_indices_to_remove[i]
+        
+        # Set filtered values to -inf
+        logits = logits.masked_fill(indices_to_remove, float('-inf'))
+
+        return logits

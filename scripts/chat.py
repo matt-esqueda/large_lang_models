@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Interactive chatbot using trained GPT model
+Interactive chatbot using trained GPT model with advanced sampling controls
 """
 
 import os
@@ -22,7 +22,15 @@ parser.add_argument('-model', type=str, default='model_final.pkl',
 parser.add_argument('-max_tokens', type=int, default=150,
                     help='Maximum tokens to generate (default: 150)')
 parser.add_argument('-temperature', type=float, default=1.0,
-                    help='Sampling temperature (default: 1.0)')
+                    help='Sampling temperature 0.0=greedy, 1.0=normal, >1.0=creative (default: 1.0)')
+parser.add_argument('-top_k', type=int, default=None,
+                    help='Top-k sampling: only sample from top k tokens (default: None)')
+parser.add_argument('-top_p', type=float, default=None,
+                    help='Nucleus sampling: sample from tokens with cumulative prob >= p (default: None)')
+parser.add_argument('-repetition_penalty', type=float, default=1.0,
+                    help='Penalty for repeating tokens, >1.0 discourages repetition (default: 1.0)')
+parser.add_argument('-stream', action='store_true',
+                    help='Stream output token by token (experimental)')
 
 args = parser.parse_args()
 
@@ -68,15 +76,94 @@ print("Model loaded successfully!\n")
 total_params = sum(p.numel() for p in model.parameters())
 print(f"Model parameters: {total_params:,}")
 print(f"Vocabulary size: {tokenizer.vocab_size}")
-print(f"Block size: {model.block_size}")
-print(f"Max tokens: {args.max_tokens}")
-print(f"Temperature: {args.temperature}\n")
+print(f"Block size: {model.block_size}\n")
 
-print("=" * 60)
-print("Chatbot ready! Type your prompt and press Enter.")
-print("Commands: 'quit' to exit, 'clear' to start fresh")
-print("=" * 60)
+# Display sampling configuration
+print("=" * 70)
+print("SAMPLING CONFIGURATION")
+print("=" * 70)
+print(f"Temperature:         {args.temperature} ", end="")
+if args.temperature == 0.0:
+    print("(greedy/deterministic)")
+elif args.temperature < 0.7:
+    print("(conservative)")
+elif args.temperature <= 1.3:
+    print("(balanced)")
+else:
+    print("(creative/random)")
+
+print(f"Max tokens:          {args.max_tokens}")
+print(f"Top-k filtering:     {args.top_k if args.top_k else 'disabled'}")
+print(f"Top-p filtering:     {args.top_p if args.top_p else 'disabled'}")
+print(f"Repetition penalty:  {args.repetition_penalty}")
+print(f"Streaming:           {'enabled' if args.stream else 'disabled'}")
+print("=" * 70)
+
+print("\nChatbot ready! Type your prompt and press Enter.")
+print("Commands:")
+print("  'quit' or 'exit' - Exit the chatbot")
+print("  'clear'          - Clear screen")
+print("  'config'         - Show current configuration")
+print("  'help'           - Show this help message")
+print("=" * 70)
 print()
+
+
+def show_config():
+    """Display current sampling configuration"""
+    print("\n" + "=" * 70)
+    print("CURRENT CONFIGURATION")
+    print("=" * 70)
+    print(f"Model:              {args.model}")
+    print(f"Temperature:        {args.temperature}")
+    print(f"Max tokens:         {args.max_tokens}")
+    print(f"Top-k:              {args.top_k if args.top_k else 'disabled'}")
+    print(f"Top-p:              {args.top_p if args.top_p else 'disabled'}")
+    print(f"Repetition penalty: {args.repetition_penalty}")
+    print("=" * 70 + "\n")
+
+
+def generate_streaming(context, max_tokens):
+    """Generate text with streaming output (token by token)"""
+    print("\nCompletion:\n", end="", flush=True)
+    
+    generated_text = tokenizer.decode(context[0].tolist())
+    print(generated_text, end="", flush=True)
+    
+    with torch.no_grad():
+        for _ in range(max_tokens):
+            # Crop context to block_size
+            index_cond = context[:, -model.block_size:]
+            
+            # Get predictions
+            logits, _ = model.forward(index_cond)
+            logits = logits[:, -1, :]
+            
+            # Apply sampling parameters
+            if args.temperature == 0.0:
+                idx_next = torch.argmax(logits, dim=-1, keepdim=True)
+            else:
+                logits = logits / args.temperature
+                
+                if args.top_k is not None:
+                    logits = model._top_k_filtering(logits, args.top_k)
+                
+                if args.top_p is not None:
+                    logits = model._top_p_filtering(logits, args.top_p)
+                
+                probs = torch.nn.functional.softmax(logits, dim=-1)
+                idx_next = torch.multinomial(probs, num_samples=1)
+            
+            # Append to context
+            context = torch.cat((context, idx_next), dim=1)
+            
+            # Decode and print new token
+            new_char = tokenizer.decode([idx_next.item()])
+            print(new_char, end="", flush=True)
+    
+    print("\n")
+    return context
+
 
 # Interactive loop
 while True:
@@ -86,28 +173,60 @@ while True:
         if not prompt:
             continue
         
-        if prompt.lower() == 'quit':
+        # Handle commands
+        if prompt.lower() in ['quit', 'exit']:
             print("\nGoodbye!")
             break
 
         if prompt.lower() == 'clear':
             print("\n" * 2)
             continue
+        
+        if prompt.lower() == 'config':
+            show_config()
+            continue
+        
+        if prompt.lower() == 'help':
+            print("\nCommands:")
+            print("  'quit' or 'exit' - Exit the chatbot")
+            print("  'clear'          - Clear screen")
+            print("  'config'         - Show current configuration")
+            print("  'help'           - Show this help message")
+            print("\nSampling parameters (set via command-line flags):")
+            print("  -temperature <float>  : Randomness (0.0=greedy, 1.0=normal, >1.0=creative)")
+            print("  -top_k <int>          : Sample from top k tokens only")
+            print("  -top_p <float>        : Nucleus sampling threshold (e.g., 0.9)")
+            print("  -repetition_penalty   : Discourage repetition (>1.0)")
+            print("  -max_tokens <int>     : Maximum length of generation")
+            print("\nExample:")
+            print("  python scripts/chat.py -temperature 0.8 -top_k 50 -max_tokens 200\n")
+            continue
 
         # Encode prompt
         context = torch.tensor(tokenizer.encode(prompt), dtype=torch.long, device=device)
-        context = context.unsqueeze(0)      # Add batch dimension
+        context = context.unsqueeze(0)  # Add batch dimension
 
-        # Generate 
-        print("\nGenerating", end="", flush=True)
-        with torch.no_grad():
-            generated = model.generate(context, max_new_tokens=args.max_tokens)
-
-        # Decode and print
-        output = tokenizer.decode(generated[0].tolist())
-        print("\r" + " " * 20)              # Clear "Generating..."
-        print(f"Completion:\n{output}\n")
-        print("-" * 60)
+        # Generate with chosen method
+        if args.stream:
+            generated = generate_streaming(context, args.max_tokens)
+        else:
+            print("\nGenerating", end="", flush=True)
+            with torch.no_grad():
+                generated = model.generate(
+                    context,
+                    max_new_tokens=args.max_tokens,
+                    temperature=args.temperature,
+                    top_k=args.top_k,
+                    top_p=args.top_p,
+                    repetition_penalty=args.repetition_penalty
+                )
+            
+            # Decode and print
+            output = tokenizer.decode(generated[0].tolist())
+            print("\r" + " " * 20)  # Clear "Generating..."
+            print(f"Completion:\n{output}\n")
+        
+        print("-" * 70)
 
     except KeyboardInterrupt:
         print("\n\nInterrupted. Goodbye!")
@@ -115,4 +234,6 @@ while True:
 
     except Exception as e:
         print(f"\nError: {e}")
+        import traceback
+        traceback.print_exc()
         print("Try a different prompt.\n")
