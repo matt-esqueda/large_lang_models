@@ -1,0 +1,40 @@
+# GPT Language Model Configuration
+
+# Model Architecture
+model:
+  n_embd: 384             # Embedding dimension
+  n_head: 6               # Number of attention heads
+  n_layer: 6              # Number of transformer layers
+  block_size: 64          # Context window size
+  dropout: 0.2            # Dropout rate
+  vocab_size: null        # Set automatically from vocab size
+
+# Training
+training:
+  batch_size: 32          # Batch size
+  max_iters: 5000         # Maximum taining iterations
+  learning_rate: 3e-4     # Learning rate
+  eval_iters: 100         # How often to evaluate
+  eval_interval: 500      # How often to print eval metrics
+
+# Data
+data:
+  vocab_file: data/processed/vocab.txt
+  train_file: data/processed/train_split.txt
+  val_file: data/processed/val_split.txt
+  train_split: 0.9        # Train/val split ratio
+
+# Paths
+paths:
+  model_dir: models/checkpoints
+  log_dir: logs
+  data_dir: data 
+
+# Generation
+generation:
+  max_new_tokens: 150     # Max token to generate
+  temperature: 1.0        # Sampling temperature (not yet implemented)
+  top_k: null             # Top-k sampling (not yet implemented)
+
+# Device 
+device: cuda              # 'cuda' or 'cpu'

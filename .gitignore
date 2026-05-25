@@ -2,24 +2,36 @@
 .ipynb_checkpoints/
 
 # Data files
-train_split.txt
-val_split.txt
-vocab.txt
-output_train.txt
-output_val.txt
+data/processed/*.txt
+data/openwebtext/
 
 # Model files
-*.pkl
-*.pth
-*.pt
+models/**/*.pkl
+models/**/*.pth
+models/**/*.pt
+
+# Logs
+logs/*.csv
+logs/*.log
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
+**/__pycache__
 
 # Virtual environments
 venv/
 .venv/
 env/
 ENV/
+
+#IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

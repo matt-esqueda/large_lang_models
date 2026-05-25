@@ -5,16 +5,22 @@ Creates train/validation splits and vocab file.
 """
 
 import os
+import sys
+
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.tokenizer import CharacterTokenizer
 
 # Configuration
-INPUT_FILE = "wizard_of_oz.txt"
-TRAIN_FILE = "train_split.txt"
-VAL_FILE = "val_split.txt"
-VOCAB_FILE = "vocab.txt"
+INPUT_FILE = "data/raw/wizard_of_oz.txt"
+TRAIN_FILE = "data/processed/train_split.txt"
+VAL_FILE = "data/processed/val_split.txt"
+VOCAB_FILE = "data/processed/vocab.txt"
 TRAIN_SPLIT = 0.9                       # 90% for training, 10% for validation
 
 def prepare_data():
-    """Prepare input file, create splits, and generate vocab"""
+    """Read input file, create splits, and generate vocabulary"""
 
     print(f"Reading {INPUT_FILE}...")
 
@@ -22,11 +28,10 @@ def prepare_data():
     with open(INPUT_FILE, 'r', encoding='utf-8') as f:
         text = f.read()
 
-        print(f"Total characters: {len(text)}")
+        print(f"Total characters: {len(text):,}")
 
         # Calculate split point
         split_idx = int(len(text) * TRAIN_SPLIT)
-
         train_text = text[:split_idx]
         val_text = text[split_idx:]
 
@@ -44,20 +49,11 @@ def prepare_data():
         with open(VAL_FILE, 'w', encoding='utf-8') as f:
             f.write(val_text)
         
-        # Create vocabulare from entire text
         print("Generating vocabulary...")
-        chars = sorted(list(set(text)))
-        vocab_size = len(chars)
+        vocab_size = CharacterTokenizer.create_vocab(INPUT_FILE, VOCAB_FILE)
 
-        print(f"Vocabulary size: {vocab_size}")
-
-        # Write vocabulary file 
-        print(f"Writing {VOCAB_FILE}...")
-        with open(VOCAB_FILE, 'w', encoding='utf-8') as f:
-            for char in chars:
-                f.write(char + '\n')
-        
-        print("\n Data preparation complete")
+        print(f"Vocabulary size: {vocab_size}")        
+        print("\n Data preparation complete!")
         print(f"  - {TRAIN_FILE}: {len(train_text):,} characters")
         print(f"  - {VAL_FILE}: {len(val_text):,} characters")
         print(f"  - {VOCAB_FILE}: {vocab_size} unique characters")
