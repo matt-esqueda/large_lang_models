@@ -1,0 +1,12 @@
+# Force LF everywhere so the character vocabulary is identical on every machine.
+* text=auto eol=lf
+*.txt text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+
+# Never normalize binaries
+*.pkl binary
+*.pt binary
+*.pth binary
+*.png binary
