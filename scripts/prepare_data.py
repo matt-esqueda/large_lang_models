@@ -22,6 +22,9 @@ TRAIN_SPLIT = 0.9                       # 90% for training, 10% for validation
 def prepare_data():
     """Read input file, create splits, and generate vocabulary"""
 
+    # Ensure output directory exists (not tracked by git)
+    os.makedirs(os.path.dirname(TRAIN_FILE), exist_ok=True)
+
     print(f"Reading {INPUT_FILE}...")
 
     # Read the input file
