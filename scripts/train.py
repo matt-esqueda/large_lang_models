@@ -225,6 +225,8 @@ start_time = time.time()
 last_checkpoint_time = start_time
 
 for iter in range(max_iters):
+    losses = None
+
     # Evaluate loss and save checkpoint periodically
     if iter % eval_interval == 0 or iter == max_iters - 1:
         losses = estimate_loss()
@@ -244,10 +246,12 @@ for iter in range(max_iters):
         # Log metrics
         log_metrics(iter, losses['train'], losses['val'], elapsed)
         
-        # Save checkpoint at intervals
-        if iter > 0 and iter % checkpoint_interval == 0:
-            save_checkpoint(iter, losses['train'], losses['val'])
-            last_checkpoint_time = time.time()
+    # Save checkpoint at intervals (independent of eval_interval)
+    if iter > 0 and iter % checkpoint_interval == 0:
+        # Reuse this iteration's eval if one was just computed
+        ckpt_losses = losses if losses is not None else estimate_loss()
+        save_checkpoint(iter, ckpt_losses['train'], ckpt_losses['val'])
+        last_checkpoint_time = time.time()
     
     # Get batch and compute loss
     xb, yb = get_batch('train')
