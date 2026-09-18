@@ -12,7 +12,7 @@ Living document. Update it in the same PR that changes anything here.
 | # | Branch | Scope | Status |
 |---|--------|-------|--------|
 | 1 | `fix/reproducible-setup` | clone reproducibility, requirements, line endings | in review |
-| 2 | `fix/silent-correctness-bugs` | `_init_weights`, `self.device`, checkpoint interval | next |
+| 2 | `fix/silent-correctness-bugs` | `_init_weights`, `self.device`, checkpoint interval, tokenizer | in review |
 | 3 | `refactor/state-dict-checkpoints` | replace pickle with `state_dict` + optimizer state | planned |
 | 4 | `refactor/shared-data-pipeline` | in-memory corpus, dedupe `resume_training.py` | planned |
 | 5 | `test/core-invariants` | real pytest suite | planned |
@@ -119,6 +119,8 @@ install.
 The character vocabulary derives from `data/raw/wizard_of_oz.txt`. If it
 differs between machines, `lm_head` shapes mismatch and token IDs shift -
 checkpoints silently become incompatible.
+
+Current baseline: 80 characters (81 minus a stripped UTF-8 BOM).
 
 Verify after any change to the corpus or to `prepare_data.py`:
 

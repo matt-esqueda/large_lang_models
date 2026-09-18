@@ -1,43 +1,60 @@
 """Character-level tokenizer utilities"""
 
+import json
+
+
 class CharacterTokenizer:
-    """Simple character-level tokenizer"""
+    """Simple character-level tokenizer.
+
+    The vocabulary is stored as a JSON array of single-character strings.
+    An earlier line-delimited format could not unambiguously represent the
+    newline character itself (it was written as a blank line and read back
+    twice, inflating the vocabulary by one and creating a duplicate token).
+    """
 
     def __init__(self, vocab_file):
-        """Load vocabulary from file"""
-        with open(vocab_file, 'r', encoding='utf-8') as f:
-            chars = []
-            for line in f:
-                if line == '\n':
-                    # Empty line represents the newline character itself
-                    chars.append('\n')
-                else:
-                    # Remove trailing newline, keep the character
-                    chars.append(line[:-1] if line.endswith('\n') else line)
+        """Load vocabulary from file."""
+        with open(vocab_file, "r", encoding="utf-8") as f:
+            chars = json.load(f)
+
+        if len(chars) != len(set(chars)):
+            raise ValueError(f"Vocabulary in {vocab_file} contains duplicates")
 
         self.chars = chars
         self.vocab_size = len(chars)
         self.string_to_int = {ch: i for i, ch in enumerate(chars)}
         self.int_to_string = {i: ch for i, ch in enumerate(chars)}
-    
+
     def encode(self, text):
-        """Encode text to list of integers"""
-        return [self.string_to_int[c] for c in text]
-    
+        """Encode text to a list of integers.
+
+        Raises ValueError on characters outside the vocabulary.
+        """
+        try:
+            return [self.string_to_int[c] for c in text]
+        except KeyError as e:
+            raise ValueError(
+                f"Character {e.args[0]!r} is not in the vocabulary "
+                f"({self.vocab_size} characters)"
+            ) from None
+
     def decode(self, indices):
-        """Decode list of integers to text"""
-        return ''.join([self.int_to_string[i] for i in indices])
-    
+        """Decode a list of integers to text."""
+        return "".join(self.int_to_string[i] for i in indices)
+
     @staticmethod
     def create_vocab(text_file, vocab_file):
-        """Create vocabulary file from text file"""
-        with open(text_file, 'r', encoding='utf-8') as f:
+        """Create a vocabulary file from a text file.
+
+        Reads with utf-8-sig so a leading byte-order mark is stripped rather
+        than becoming a vocabulary entry.
+        """
+        with open(text_file, "r", encoding="utf-8-sig") as f:
             text = f.read()
 
-        chars = sorted(list(set(text)))
+        chars = sorted(set(text))
 
-        with open(vocab_file, 'w', encoding='utf-8') as f:
-            for char in chars:
-                f.write(char + '\n')
-            
+        with open(vocab_file, "w", encoding="utf-8") as f:
+            json.dump(chars, f, ensure_ascii=False)
+
         return len(chars)

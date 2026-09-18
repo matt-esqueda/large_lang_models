@@ -93,7 +93,11 @@ class GPTLanguageModel(nn.Module):
     def __init__(self, vocab_size, n_embd=384, n_head=6, n_layer=6, block_size=64, dropout=0.2, device='cuda'):
         super().__init__()
         self.block_size = block_size
-        self.device = device
+
+        if n_embd % n_head != 0:
+            raise ValueError(
+                f"n_embd ({n_embd}) must be divisible by n_head ({n_head})"
+            )
 
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
@@ -108,15 +112,15 @@ class GPTLanguageModel(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.Embedding):
-                torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
     
     def forward(self, index, targets=None):
         B, T = index.shape
 
         # idx and targets are both (B,T) tensor of integers
         tok_emb = self.token_embedding_table(index)     # (B,T,C)
-        pos_emb = self.position_embedding_table(torch.arange(T, device=self.device))      # (T,C)
+        pos_emb = self.position_embedding_table(torch.arange(T, device=index.device))      # (T,C)
         x = tok_emb + pos_emb       # (B,T,C)
         x = self.blocks(x)          # (B,T,C)
         x = self.ln_f(x)            # (B,T,C)

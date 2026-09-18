@@ -28,7 +28,7 @@ def prepare_data():
     print(f"Reading {INPUT_FILE}...")
 
     # Read the input file
-    with open(INPUT_FILE, 'r', encoding='utf-8') as f:
+    with open(INPUT_FILE, 'r', encoding='utf-8-sig') as f:
         text = f.read()
 
         print(f"Total characters: {len(text):,}")
