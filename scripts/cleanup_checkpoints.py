@@ -30,8 +30,8 @@ args = parser.parse_args()
 MODEL_DIR = 'models/checkpoints'
 
 # Find all checkpoint files
-checkpoint_files = glob.glob(os.path.join(MODEL_DIR, 'model_iter*.pkl'))
-final_files = glob.glob(os.path.join(MODEL_DIR, 'model_final.pkl'))
+checkpoint_files = glob.glob(os.path.join(MODEL_DIR, 'model_iter*.pt'))
+final_files = glob.glob(os.path.join(MODEL_DIR, 'model_final.pt'))
 
 print("=" * 70)
 print("CHECKPOINT CLEANUP UTILITY")
@@ -59,7 +59,7 @@ for ckpt in checkpoint_files:
         })
 
 if len(checkpoint_info) == 0:
-    print("No intermediate checkpoints found (model_iter*.pkl)")
+    print("No intermediate checkpoints found (model_iter*.pt)")
     print(f"Final models: {len(final_files)}")
     sys.exit(0)
 
@@ -131,7 +131,7 @@ elif args.strategy == 'best_val':
 elif args.strategy == 'all_final':
     # Keep all final models, delete all intermediate
     keep_checkpoints = set()
-    print("Strategy: Keep all 'model_final.pkl', delete all intermediate checkpoints")
+    print("Strategy: Keep all 'model_final.pt', delete all intermediate checkpoints")
 
 # Always keep final models
 keep_checkpoints.update(final_files)

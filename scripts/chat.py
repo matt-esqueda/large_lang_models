@@ -6,7 +6,6 @@ Interactive chatbot using trained GPT model with advanced sampling controls
 import os
 import sys
 import torch
-import pickle
 import argparse
 
 # Add project root to path
@@ -14,11 +13,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.model import GPTLanguageModel
 from src.tokenizer import CharacterTokenizer
+from src.checkpoint import load_checkpoint
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Interactive GPT chatbot')
-parser.add_argument('-model', type=str, default='model_final.pkl', 
-                    help='Model filename in models/checkpoints/ (default: model_final.pkl)')
+parser.add_argument('-model', type=str, default='model_final.pt', 
+                    help='Model filename in models/checkpoints/ (default: model_final.pt)')
 parser.add_argument('-max_tokens', type=int, default=150,
                     help='Maximum tokens to generate (default: 150)')
 parser.add_argument('-temperature', type=float, default=1.0,
@@ -48,7 +48,7 @@ if not os.path.exists(MODEL_FILE):
     print("\nAvailable models in models/checkpoints/:")
     checkpoint_dir = 'models/checkpoints'
     if os.path.exists(checkpoint_dir):
-        models = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pkl')]
+        models = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pt')]
         if models:
             for m in sorted(models):
                 size_mb = os.path.getsize(os.path.join(checkpoint_dir, m)) / (1024*1024)
@@ -65,11 +65,9 @@ tokenizer = CharacterTokenizer(VOCAB_FILE)
 
 # Load model
 print(f"Loading model from {MODEL_FILE}...")
-with open(MODEL_FILE, 'rb') as f:
-    model = pickle.load(f)
+model, ckpt_meta = load_checkpoint(MODEL_FILE, device=device)
 
 model.eval()
-model = model.to(device)
 print("Model loaded successfully!\n")
 
 # Get model info

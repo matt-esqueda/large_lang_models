@@ -12,8 +12,8 @@ Living document. Update it in the same PR that changes anything here.
 | # | Branch | Scope | Status |
 |---|--------|-------|--------|
 | 1 | `fix/reproducible-setup` | clone reproducibility, requirements, line endings | in review |
-| 2 | `fix/silent-correctness-bugs` | `_init_weights`, `self.device`, checkpoint interval, tokenizer | in review |
-| 3 | `refactor/state-dict-checkpoints` | replace pickle with `state_dict` + optimizer state | planned |
+| 2 | `fix/silent-correctness-bugs` | `_init_weights`, `self.device`, checkpoint interval, tokenizer | merged |
+| 3 | `refactor/state-dict-checkpoints` | replace pickle with `state_dict` + optimizer state | in review |
 | 4 | `refactor/shared-data-pipeline` | in-memory corpus, dedupe `resume_training.py` | planned |
 | 5 | `test/core-invariants` | real pytest suite | planned |
 | 6 | `refactor/package-layout` | installable package, CLI entry points, config wiring | planned |
@@ -186,14 +186,14 @@ Struck through = fixed.
 - `checkpoint_interval` is silently ignored unless it divides
   `eval_interval` - the save block is nested inside the eval block.
 
-### Checkpoints (PR 3)
-- `pickle.dump(model)` stores the class import path; renaming anything in
+### Checkpoints (PR 3) - FIXED
+- ~~`pickle.dump(model)` stores the class import path; renaming anything in
   `src/model.py` invalidates every existing checkpoint.
-- GPU-trained pickles cannot load on CPU (no `map_location` escape hatch).
-- `pickle.load` on an untrusted file executes arbitrary code.
-- `resume_training.py` builds a fresh `AdamW`, discarding moment estimates
+- ~~GPU-trained pickles cannot load on CPU (no `map_location` escape hatch).
+- ~~`pickle.load` on an untrusted file executes arbitrary code.
+- ~~`resume_training.py` builds a fresh `AdamW`, discarding moment estimates
   and causing a loss bump on resume.
-- Resume recovers the iteration number by regexing the filename; resuming
+- ~~Resume recovers the iteration number by regexing the filename; resuming
   from `model_final.pkl` silently restarts the counter at 0.
 
 ### Training quality (PR 4)
@@ -238,6 +238,8 @@ Struck through = fixed.
 | 2026-09 | `makedirs` in code over `.gitkeep` | `.gitignore` has a bare `logs/` rule that would ignore a `.gitkeep` |
 | 2026-09 | Correctness before restructuring | Restructuring touches every file; one clean diff set |
 | 2026-09 | Squash merge | Readable, revertable `main` history |
+| 2026-09 | `.pt` state_dict checkpoints over pickle | Survives refactors, loads cross-device, no arbitrary code execution |
+| 2026-09 | Add ruff early (PR 4) | Repo has trailing whitespace on blank lines, which repeatedly broke exact-match patching |
 
 ---
 
