@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 import mmap
 import random
-import pickle
 import argparse
 import csv
 from datetime import datetime
@@ -21,6 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.model import GPTLanguageModel
 from src.tokenizer import CharacterTokenizer
+from src.checkpoint import save_checkpoint as save_ckpt
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Train GPT Language Model')
@@ -138,12 +138,12 @@ def estimate_loss():
 
 def save_checkpoint(iteration, train_loss, val_loss):
     """Save model checkpoint"""
-    checkpoint_name = f'model_iter{iteration}.pkl'
+    checkpoint_name = f'model_iter{iteration}.pt'
     checkpoint_path = os.path.join(MODEL_DIR, checkpoint_name)
     
     print(f"  Saving checkpoint: {checkpoint_name}")
-    with open(checkpoint_path, 'wb') as f:
-        pickle.dump(model, f)
+    save_ckpt(checkpoint_path, model, optimizer, iteration=iteration,
+              train_loss=train_loss, val_loss=val_loss, vocab_size=vocab_size)
     
     return checkpoint_path
 
@@ -274,10 +274,11 @@ print(f"Total time:       {format_time(total_time)}")
 print(f"Avg time/iter:    {total_time/max_iters:.3f}s")
 
 # Save final model
-final_model_path = os.path.join(MODEL_DIR, 'model_final.pkl')
+final_model_path = os.path.join(MODEL_DIR, 'model_final.pt')
 print(f"\nSaving final model to {final_model_path}...")
-with open(final_model_path, 'wb') as f:
-    pickle.dump(model, f)
+save_ckpt(final_model_path, model, optimizer, iteration=max_iters,
+          train_loss=losses['train'], val_loss=losses['val'],
+          vocab_size=vocab_size)
 print("Model saved successfully!")
 
 # Log final metrics

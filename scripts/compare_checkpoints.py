@@ -7,7 +7,6 @@ Generates the same prompts from each checkpoint to compare quality
 import os
 import sys
 import torch
-import pickle
 import argparse
 from datetime import datetime
 
@@ -16,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.model import GPTLanguageModel
 from src.tokenizer import CharacterTokenizer
+from src.checkpoint import load_checkpoint
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Compare multiple model checkpoints')
@@ -59,11 +59,9 @@ for ckpt_name in args.checkpoints:
         continue
     
     print(f"  Loading {ckpt_name}...")
-    with open(ckpt_path, 'rb') as f:
-        model = pickle.load(f)
+    model, _ = load_checkpoint(ckpt_path, device=device)
     
     model.eval()
-    model = model.to(device)
     models[ckpt_name] = model
 
 if len(models) == 0:

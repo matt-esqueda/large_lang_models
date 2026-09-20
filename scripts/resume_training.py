@@ -6,7 +6,6 @@ Resume training from a checkpoint
 import os
 import sys
 import torch
-import pickle
 import argparse
 import csv
 from datetime import datetime
@@ -17,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.model import GPTLanguageModel
 from src.tokenizer import CharacterTokenizer
+from src.checkpoint import load_checkpoint, save_checkpoint as save_ckpt
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Resume training from checkpoint')
@@ -56,7 +56,7 @@ if not os.path.exists(CHECKPOINT_PATH):
     print(f"Error: Checkpoint not found at {CHECKPOINT_PATH}")
     print("\nAvailable checkpoints:")
     if os.path.exists(MODEL_DIR):
-        checkpoints = [f for f in os.listdir(MODEL_DIR) if f.endswith('.pkl')]
+        checkpoints = [f for f in os.listdir(MODEL_DIR) if f.endswith('.pt')]
         for ckpt in sorted(checkpoints):
             size_mb = os.path.getsize(os.path.join(MODEL_DIR, ckpt)) / (1024*1024)
             print(f"  - {ckpt} ({size_mb:.1f} MB)")
@@ -70,10 +70,8 @@ print(f"Vocabulary size: {vocab_size}")
 
 # Load checkpoint
 print(f"\nLoading checkpoint from {CHECKPOINT_PATH}...")
-with open(CHECKPOINT_PATH, 'rb') as f:
-    model = pickle.load(f)
+model, ckpt_meta = load_checkpoint(CHECKPOINT_PATH, device=device)
 
-model = model.to(device)
 model.train()
 print("Checkpoint loaded successfully!")
 
@@ -82,9 +80,7 @@ total_params = sum(p.numel() for p in model.parameters())
 print(f"Total parameters: {total_params:,}")
 
 # Extract starting iteration from checkpoint name
-import re
-iter_match = re.search(r'iter(\d+)', args.checkpoint)
-start_iter = int(iter_match.group(1)) if iter_match else 0
+start_iter = ckpt_meta['iteration']
 end_iter = start_iter + args.additional_iters
 
 print(f"\nResuming from iteration: {start_iter}")
@@ -95,8 +91,17 @@ print(f"Additional iterations: {args.additional_iters}")
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 metrics_file = os.path.join(LOG_DIR, f'resume_training_{timestamp}.csv')
 
-# Optimizer (create fresh optimizer for resumed training)
+# Optimizer: restore moment estimates from the checkpoint. A fresh AdamW
+# discards them, which causes a visible loss bump on resume.
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+_ckpt_raw = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=False)
+if 'optimizer_state' in _ckpt_raw:
+    optimizer.load_state_dict(_ckpt_raw['optimizer_state'])
+    for _g in optimizer.param_groups:
+        _g['lr'] = args.learning_rate
+    print('Optimizer state restored from checkpoint')
+else:
+    print('Warning: checkpoint has no optimizer state; starting fresh')
 
 # Import training functions from train.py
 import random
@@ -161,12 +166,12 @@ def estimate_loss():
 
 def save_checkpoint(iteration, train_loss, val_loss):
     """Save model checkpoint"""
-    checkpoint_name = f'model_iter{iteration}.pkl'
+    checkpoint_name = f'model_iter{iteration}.pt'
     checkpoint_path = os.path.join(MODEL_DIR, checkpoint_name)
     
     print(f"  Saving checkpoint: {checkpoint_name}")
-    with open(checkpoint_path, 'wb') as f:
-        pickle.dump(model, f)
+    save_ckpt(checkpoint_path, model, optimizer, iteration=iteration,
+              train_loss=train_loss, val_loss=val_loss, vocab_size=vocab_size)
     
     return checkpoint_path
 
@@ -270,10 +275,11 @@ print(f"Total time:       {format_time(total_time)}")
 print(f"Avg time/iter:    {total_time/args.additional_iters:.3f}s")
 
 # Save final model
-final_model_path = os.path.join(MODEL_DIR, f'model_iter{end_iter}.pkl')
+final_model_path = os.path.join(MODEL_DIR, f'model_iter{end_iter}.pt')
 print(f"\nSaving final model to {final_model_path}...")
-with open(final_model_path, 'wb') as f:
-    pickle.dump(model, f)
+save_ckpt(final_model_path, model, optimizer, iteration=end_iter,
+          train_loss=losses['train'], val_loss=losses['val'],
+          vocab_size=vocab_size)
 print("Model saved successfully!")
 
 log_metrics(end_iter, losses['train'], losses['val'], total_time)
