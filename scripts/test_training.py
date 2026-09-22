@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Test script to validate enhanced training functionality
@@ -18,14 +17,18 @@ RED = '\033[91m'
 YELLOW = '\033[93m'
 RESET = '\033[0m'
 
+
 def print_test(msg):
     print(f"\n{YELLOW}[TEST]{RESET} {msg}")
+
 
 def print_pass(msg):
     print(f"{GREEN}✓{RESET} {msg}")
 
+
 def print_fail(msg):
     print(f"{RED}✗{RESET} {msg}")
+
 
 def check_file_exists(filepath, description):
     """Check if a file exists and print result"""
@@ -36,58 +39,80 @@ def check_file_exists(filepath, description):
         print_fail(f"{description} missing: {filepath}")
         return False
 
+
 def check_csv_content(filepath):
     """Validate CSV file content"""
     try:
         with open(filepath, 'r') as f:
             reader = csv.reader(f)
             rows = list(reader)
-            
+
         if len(rows) < 2:
             print_fail(f"CSV has no data rows (only {len(rows)} rows)")
             return False
-        
+
         # Check header
-        expected_cols = ['iteration', 'train_loss', 'val_loss', 'learning_rate', 'elapsed_seconds', 'timestamp']
+        expected_cols = [
+            'iteration',
+            'train_loss',
+            'val_loss',
+            'learning_rate',
+            'elapsed_seconds',
+            'timestamp',
+        ]
         if rows[0] != expected_cols:
             print_fail(f"CSV header incorrect: {rows[0]}")
             return False
-        
+
         print_pass(f"CSV header correct: {expected_cols}")
-        print_pass(f"CSV has {len(rows)-1} data rows")
-        
+        print_pass(f"CSV has {len(rows) - 1} data rows")
+
         # Show first and last data rows
         if len(rows) > 1:
-            print(f"  First entry: iter={rows[1][0]}, train_loss={rows[1][1]}, val_loss={rows[1][2]}")
+            print(
+                f"  First entry: iter={rows[1][0]}, train_loss={rows[1][1]}, val_loss={rows[1][2]}"
+            )
         if len(rows) > 2:
-            print(f"  Last entry:  iter={rows[-1][0]}, train_loss={rows[-1][1]}, val_loss={rows[-1][2]}")
-        
+            print(
+                f"  Last entry:  iter={rows[-1][0]}, train_loss={rows[-1][1]}, val_loss={rows[-1][2]}"
+            )
+
         return True
     except Exception as e:
         print_fail(f"Error reading CSV: {e}")
         return False
 
+
 # Test configuration
-print("="*70)
+print("=" * 70)
 print("TRAINING ENHANCEMENT TEST")
-print("="*70)
-print(f"Test will run 50 iterations with checkpoints every 25 iterations")
-print(f"Expected checkpoints: model_iter25.pkl, model_final.pkl")
+print("=" * 70)
+print("Test will run 50 iterations with checkpoints every 25 iterations")
+print("Expected checkpoints: model_iter25.pkl, model_final.pkl")
 print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-print("="*70)
+print("=" * 70)
 
 # Run short training
 print_test("Running short training session...")
 cmd = [
-    'python', 'scripts/train.py',
-    '-batch_size', '16',
-    '-max_iters', '50',
-    '-eval_interval', '25',
-    '-checkpoint_interval', '25',
-    '-block_size', '32',
-    '-n_layer', '4',
-    '-n_head', '4',
-    '-n_embd', '128'
+    'python',
+    'scripts/train.py',
+    '-batch_size',
+    '16',
+    '-max_iters',
+    '50',
+    '-eval_interval',
+    '25',
+    '-checkpoint_interval',
+    '25',
+    '-block_size',
+    '32',
+    '-n_layer',
+    '4',
+    '-n_head',
+    '4',
+    '-n_embd',
+    '128',
 ]
 
 print(f"Command: {' '.join(cmd)}\n")
@@ -106,9 +131,9 @@ if result.returncode != 0:
 print_pass("Training completed successfully")
 
 # Validation checks
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("VALIDATION CHECKS")
-print("="*70)
+print("=" * 70)
 
 all_checks_passed = True
 
@@ -172,14 +197,14 @@ else:
     all_checks_passed = False
 
 # Final result
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 if all_checks_passed:
     print(f"{GREEN}ALL TESTS PASSED ✓{RESET}")
-    print("="*70)
+    print("=" * 70)
     print("\nEnhanced training script is working correctly!")
     print("\nCheckpoint behavior:")
-    print(f"  - Intermediate checkpoints saved at intervals: model_iter{{N}}.pkl")
-    print(f"  - Final iteration always saved as: model_final.pkl")
+    print("  - Intermediate checkpoints saved at intervals: model_iter{N}.pkl")
+    print("  - Final iteration always saved as: model_final.pkl")
     print("\nReady for full 5000-iteration training run:")
     print(f"{YELLOW}python scripts/train.py -batch_size 32 -max_iters 5000{RESET}")
     print("\nThis will create:")
@@ -188,8 +213,8 @@ if all_checks_passed:
     print("  - Total: 10 checkpoint files + 1 final = 11 files")
 else:
     print(f"{RED}SOME TESTS FAILED ✗{RESET}")
-    print("="*70)
+    print("=" * 70)
     print("\nPlease review the failures above before running full training.")
     sys.exit(1)
 
-print("="*70)
+print("=" * 70)

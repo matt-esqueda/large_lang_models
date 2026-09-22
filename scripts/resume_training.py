@@ -14,26 +14,30 @@ import time
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.model import GPTLanguageModel
 from src.tokenizer import CharacterTokenizer
 from src.checkpoint import load_checkpoint, save_checkpoint as save_ckpt
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Resume training from checkpoint')
-parser.add_argument('-checkpoint', type=str, required=True,
-                    help='Checkpoint filename in models/checkpoints/')
-parser.add_argument('-additional_iters', type=int, required=True,
-                    help='Additional iterations to train')
-parser.add_argument('-batch_size', type=int, default=32,
-                    help='Batch size for training')
-parser.add_argument('-learning_rate', type=float, default=3e-4,
-                    help='Learning rate (default: 3e-4)')
-parser.add_argument('-eval_iters', type=int, default=100,
-                    help='Number of iterations for loss evaluation')
-parser.add_argument('-eval_interval', type=int, default=500,
-                    help='Evaluate loss every N iterations')
-parser.add_argument('-checkpoint_interval', type=int, default=500,
-                    help='Save checkpoint every N iterations')
+parser.add_argument(
+    '-checkpoint', type=str, required=True, help='Checkpoint filename in models/checkpoints/'
+)
+parser.add_argument(
+    '-additional_iters', type=int, required=True, help='Additional iterations to train'
+)
+parser.add_argument('-batch_size', type=int, default=32, help='Batch size for training')
+parser.add_argument(
+    '-learning_rate', type=float, default=3e-4, help='Learning rate (default: 3e-4)'
+)
+parser.add_argument(
+    '-eval_iters', type=int, default=100, help='Number of iterations for loss evaluation'
+)
+parser.add_argument(
+    '-eval_interval', type=int, default=500, help='Evaluate loss every N iterations'
+)
+parser.add_argument(
+    '-checkpoint_interval', type=int, default=500, help='Save checkpoint every N iterations'
+)
 
 args = parser.parse_args()
 
@@ -58,7 +62,7 @@ if not os.path.exists(CHECKPOINT_PATH):
     if os.path.exists(MODEL_DIR):
         checkpoints = [f for f in os.listdir(MODEL_DIR) if f.endswith('.pt')]
         for ckpt in sorted(checkpoints):
-            size_mb = os.path.getsize(os.path.join(MODEL_DIR, ckpt)) / (1024*1024)
+            size_mb = os.path.getsize(os.path.join(MODEL_DIR, ckpt)) / (1024 * 1024)
             print(f"  - {ckpt} ({size_mb:.1f} MB)")
     sys.exit(1)
 
@@ -105,12 +109,12 @@ else:
 
 # Import training functions from train.py
 import random
-import torch.nn.functional as F
+
 
 def get_random_chunk(split):
     """Read a random chunk of text from file"""
     filename = TRAIN_FILE if split == 'train' else VAL_FILE
-    
+
     with open(filename, 'r', encoding='utf-8') as f:
         text = f.read()
 
@@ -122,9 +126,9 @@ def get_random_chunk(split):
         data = torch.tensor(tokenizer.encode(text), dtype=torch.long)
     else:
         start_idx = random.randint(0, len(text) - required_chars)
-        chunk = text[start_idx:start_idx + required_chars]
+        chunk = text[start_idx : start_idx + required_chars]
         data = torch.tensor(tokenizer.encode(chunk), dtype=torch.long)
-    
+
     return data
 
 
@@ -135,15 +139,15 @@ def get_batch(split):
 
     if len(data) <= block_size:
         raise ValueError(f"Data chunk too small: {len(data)} tokens")
-    
+
     max_idx = len(data) - block_size - 1
     if max_idx < 1:
         raise ValueError(f"Not enough tokens in data: {len(data)}")
 
     ix = torch.randint(0, max_idx, (args.batch_size,))
 
-    x = torch.stack([data[i:i+block_size] for i in ix])
-    y = torch.stack([data[i+1:i+block_size+1] for i in ix])
+    x = torch.stack([data[i : i + block_size] for i in ix])
+    y = torch.stack([data[i + 1 : i + block_size + 1] for i in ix])
     x, y = x.to(device), y.to(device)
     return x, y
 
@@ -168,32 +172,50 @@ def save_checkpoint(iteration, train_loss, val_loss):
     """Save model checkpoint"""
     checkpoint_name = f'model_iter{iteration}.pt'
     checkpoint_path = os.path.join(MODEL_DIR, checkpoint_name)
-    
+
     print(f"  Saving checkpoint: {checkpoint_name}")
-    save_ckpt(checkpoint_path, model, optimizer, iteration=iteration,
-              train_loss=train_loss, val_loss=val_loss, vocab_size=vocab_size)
-    
+    save_ckpt(
+        checkpoint_path,
+        model,
+        optimizer,
+        iteration=iteration,
+        train_loss=train_loss,
+        val_loss=val_loss,
+        vocab_size=vocab_size,
+    )
+
     return checkpoint_path
 
 
 def log_metrics(iteration, train_loss, val_loss, elapsed_time):
     """Log metrics to CSV file"""
     file_exists = os.path.isfile(metrics_file)
-    
+
     with open(metrics_file, 'a', newline='') as f:
         writer = csv.writer(f)
-        
+
         if not file_exists:
-            writer.writerow(['iteration', 'train_loss', 'val_loss', 'learning_rate', 'elapsed_seconds', 'timestamp'])
-        
-        writer.writerow([
-            iteration,
-            f'{train_loss:.6f}',
-            f'{val_loss:.6f}',
-            f'{args.learning_rate:.6e}',
-            f'{elapsed_time:.2f}',
-            datetime.now().isoformat()
-        ])
+            writer.writerow(
+                [
+                    'iteration',
+                    'train_loss',
+                    'val_loss',
+                    'learning_rate',
+                    'elapsed_seconds',
+                    'timestamp',
+                ]
+            )
+
+        writer.writerow(
+            [
+                iteration,
+                f'{train_loss:.6f}',
+                f'{val_loss:.6f}',
+                f'{args.learning_rate:.6e}',
+                f'{elapsed_time:.2f}',
+                datetime.now().isoformat(),
+            ]
+        )
 
 
 def format_time(seconds):
@@ -209,9 +231,9 @@ def format_time(seconds):
 
 
 # Training configuration summary
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("RESUMED TRAINING CONFIGURATION")
-print("="*70)
+print("=" * 70)
 print(f"Starting iteration:   {start_iter:,}")
 print(f"Ending iteration:     {end_iter:,}")
 print(f"Additional iters:     {args.additional_iters:,}")
@@ -221,7 +243,7 @@ print(f"Learning rate:        {args.learning_rate:.6f}")
 print(f"Eval interval:        {args.eval_interval}")
 print(f"Checkpoint interval:  {args.checkpoint_interval}")
 print(f"Metrics log:          {metrics_file}")
-print("="*70 + "\n")
+print("=" * 70 + "\n")
 
 # Get initial loss
 print("Evaluating initial loss...")
@@ -235,55 +257,63 @@ start_time = time.time()
 
 for iter in range(args.additional_iters):
     current_iter = start_iter + iter
-    
+
     # Evaluate loss and save checkpoint periodically
     if iter % args.eval_interval == 0 or iter == args.additional_iters - 1:
         losses = estimate_loss()
         elapsed = time.time() - start_time
-        
+
         progress = (iter + 1) / args.additional_iters * 100
         iters_per_sec = (iter + 1) / elapsed if elapsed > 0 else 0
         remaining_iters = args.additional_iters - (iter + 1)
         eta_seconds = remaining_iters / iters_per_sec if iters_per_sec > 0 else 0
-        
-        print(f"step {current_iter:5d}/{end_iter} ({progress:5.1f}%) | "
-              f"train: {losses['train']:.4f} | val: {losses['val']:.4f} | "
-              f"time: {format_time(elapsed)} | ETA: {format_time(eta_seconds)}")
-        
+
+        print(
+            f"step {current_iter:5d}/{end_iter} ({progress:5.1f}%) | "
+            f"train: {losses['train']:.4f} | val: {losses['val']:.4f} | "
+            f"time: {format_time(elapsed)} | ETA: {format_time(eta_seconds)}"
+        )
+
         log_metrics(current_iter, losses['train'], losses['val'], elapsed)
-        
+
         if iter > 0 and iter % args.checkpoint_interval == 0:
             save_checkpoint(current_iter, losses['train'], losses['val'])
-    
+
     # Training step
     xb, yb = get_batch('train')
     logits, loss = model(xb, yb)
-    
+
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
 
 # Final evaluation
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("RESUMED TRAINING COMPLETE")
-print("="*70)
+print("=" * 70)
 losses = estimate_loss()
 total_time = time.time() - start_time
 print(f"Final train loss: {losses['train']:.4f}")
 print(f"Final val loss:   {losses['val']:.4f}")
 print(f"Total time:       {format_time(total_time)}")
-print(f"Avg time/iter:    {total_time/args.additional_iters:.3f}s")
+print(f"Avg time/iter:    {total_time / args.additional_iters:.3f}s")
 
 # Save final model
 final_model_path = os.path.join(MODEL_DIR, f'model_iter{end_iter}.pt')
 print(f"\nSaving final model to {final_model_path}...")
-save_ckpt(final_model_path, model, optimizer, iteration=end_iter,
-          train_loss=losses['train'], val_loss=losses['val'],
-          vocab_size=vocab_size)
+save_ckpt(
+    final_model_path,
+    model,
+    optimizer,
+    iteration=end_iter,
+    train_loss=losses['train'],
+    val_loss=losses['val'],
+    vocab_size=vocab_size,
+)
 print("Model saved successfully!")
 
 log_metrics(end_iter, losses['train'], losses['val'], total_time)
 
 print(f"\nMetrics saved to: {metrics_file}")
 print(f"Checkpoints saved in: {MODEL_DIR}/")
-print("="*70 + "\n")
+print("=" * 70 + "\n")

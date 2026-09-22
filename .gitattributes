@@ -10,3 +10,7 @@
 *.pt binary
 *.pth binary
 *.png binary
+
+# Training corpus: never normalize. Any change alters the character
+# vocabulary and invalidates every checkpoint.
+data/raw/** -text

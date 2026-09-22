@@ -1,0 +1,21 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["legacy", ".venv", "data", "models", "logs"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes. Import sorting (I), pyupgrade (UP) and
+# bugbear (B) are deferred to PR 6: isort would hoist imports above the
+# sys.path.append that every script in scripts/ depends on.
+select = ["E", "W", "F"]
+ignore = [
+    "E501",  # line length: enforced by the formatter, not the linter
+    "E741",  # ambiguous variable names (l, I, O) - present in legacy-derived code
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts must mutate sys.path before importing from src/.
+"scripts/*" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "preserve"

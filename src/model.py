@@ -1,6 +1,6 @@
 """
 GPT Language Model Architecture
-Shared model components for training and inference. 
+Shared model components for training and inference.
 """
 
 import torch
@@ -22,29 +22,31 @@ class Head(nn.Module):
     def forward(self, x):
         # input of size (batch, time-step, channels)
         # output of size (batch, time-step, head_size)
-        B,T,C = x.shape
-        k = self.key(x)                 # (B,T,hs)
-        q = self.query(x)               # (B,T,hs)
+        B, T, C = x.shape
+        k = self.key(x)  # (B,T,hs)
+        q = self.query(x)  # (B,T,hs)
         # compute attentions scores ('affinities')
-        wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5                    # (B,T,hs) @ (B,hs,T) -> (B,T,T)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))        # (B,T,T)
-        wei = F.softmax(wei, dim=-1)    # (B,T,T)
+        wei = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5  # (B,T,hs) @ (B,hs,T) -> (B,T,T)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))  # (B,T,T)
+        wei = F.softmax(wei, dim=-1)  # (B,T,T)
         wei = self.dropout(wei)
         # perform the weighted aggregation of the values
-        v = self.value(x)               # (B,T,hs)
-        out = wei @ v                   # (B,T,T) @ (B,T,hs) -> (,B,T,hs)
+        v = self.value(x)  # (B,T,hs)
+        out = wei @ v  # (B,T,T) @ (B,T,hs) -> (,B,T,hs)
         return out
-    
+
 
 class MultiHeadAttention(nn.Module):
     """Multiple head of self-attention in parallel"""
 
     def __init__(self, num_heads, head_size, n_embd, block_size, dropout):
         super().__init__()
-        self.heads = nn.ModuleList([Head(head_size, n_embd, block_size, dropout) for _ in range(num_heads)])
+        self.heads = nn.ModuleList(
+            [Head(head_size, n_embd, block_size, dropout) for _ in range(num_heads)]
+        )
         self.proj = nn.Linear(head_size * num_heads, n_embd)
         self.dropout = nn.Dropout(dropout)
-    
+
     def forward(self, x):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         out = self.dropout(self.proj(out))
@@ -62,7 +64,7 @@ class FeedForward(nn.Module):
             nn.Linear(4 * n_embd, n_embd),
             nn.Dropout(dropout),
         )
-    
+
     def forward(self, x):
         return self.net(x)
 
@@ -85,28 +87,30 @@ class Block(nn.Module):
         y = self.ffwd(x)
         x = self.ln2(x + y)
         return x
-    
+
 
 class GPTLanguageModel(nn.Module):
     """GPT Language Model"""
 
-    def __init__(self, vocab_size, n_embd=384, n_head=6, n_layer=6, block_size=64, dropout=0.2, device='cuda'):
+    def __init__(
+        self, vocab_size, n_embd=384, n_head=6, n_layer=6, block_size=64, dropout=0.2, device='cuda'
+    ):
         super().__init__()
         self.block_size = block_size
 
         if n_embd % n_head != 0:
-            raise ValueError(
-                f"n_embd ({n_embd}) must be divisible by n_head ({n_head})"
-            )
+            raise ValueError(f"n_embd ({n_embd}) must be divisible by n_head ({n_head})")
 
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.blocks = nn.Sequential(*[Block(n_embd, n_head, block_size, dropout) for _ in range(n_layer)])
-        self.ln_f = nn.LayerNorm(n_embd)        # final layer norm
+        self.blocks = nn.Sequential(
+            *[Block(n_embd, n_head, block_size, dropout) for _ in range(n_layer)]
+        )
+        self.ln_f = nn.LayerNorm(n_embd)  # final layer norm
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
         self.apply(self._init_weights)
-    
+
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
@@ -114,30 +118,32 @@ class GPTLanguageModel(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-    
+
     def forward(self, index, targets=None):
         B, T = index.shape
 
         # idx and targets are both (B,T) tensor of integers
-        tok_emb = self.token_embedding_table(index)     # (B,T,C)
-        pos_emb = self.position_embedding_table(torch.arange(T, device=index.device))      # (T,C)
-        x = tok_emb + pos_emb       # (B,T,C)
-        x = self.blocks(x)          # (B,T,C)
-        x = self.ln_f(x)            # (B,T,C)
-        logits = self.lm_head(x)    # (B,T,vocab_size)
+        tok_emb = self.token_embedding_table(index)  # (B,T,C)
+        pos_emb = self.position_embedding_table(torch.arange(T, device=index.device))  # (T,C)
+        x = tok_emb + pos_emb  # (B,T,C)
+        x = self.blocks(x)  # (B,T,C)
+        x = self.ln_f(x)  # (B,T,C)
+        logits = self.lm_head(x)  # (B,T,vocab_size)
 
         if targets is None:
             loss = None
         else:
-            B,T,C = logits.shape
-            logits = logits.view(B * T,C)
+            B, T, C = logits.shape
+            logits = logits.view(B * T, C)
             targets = targets.view(B * T)
-            loss = F.cross_entropy(logits,targets)
+            loss = F.cross_entropy(logits, targets)
         return logits, loss
-    
-    def generate(self, index, max_new_tokens, temperature=1.0, top_k=None, top_p=None, repetition_penalty=1.0):
+
+    def generate(
+        self, index, max_new_tokens, temperature=1.0, top_k=None, top_p=None, repetition_penalty=1.0
+    ):
         """Generate new tokens given a context with advanced sampling strategies
-        
+
         Args:
             index: (B, T) tensor of indices in current context
             max_new_tokens: number of tokens to generate
@@ -146,17 +152,17 @@ class GPTLanguageModel(nn.Module):
             top_k: if set, only sample from top k most likely tokens
             top_p: if set, nucleus sampling - sample from smallest set with cumulative prob >= p
             repetition_penalty: penalty for repeating tokens (>1.0 discourages repetition)
-        
+
         Returns:
             (B, T+max_new_tokens) tensor of generated indices
         """
         for _ in range(max_new_tokens):
             # crop context to block_size
-            index_cond = index[:, -self.block_size:]
+            index_cond = index[:, -self.block_size :]
             # get the predictions
             logits, loss = self.forward(index_cond)
             # focus only on the last time step
-            logits = logits[:, -1, :]                                   # becomes (B,C)
+            logits = logits[:, -1, :]  # becomes (B,C)
             # apply repetition penalty
             if repetition_penalty != 1.0:
                 logits = self._apply_repetition_penalty(logits, index, repetition_penalty)
@@ -172,15 +178,15 @@ class GPTLanguageModel(nn.Module):
                     logits = self._top_k_filtering(logits, top_k)
                 # apply top-p (nucleus) filtering
                 if top_p is not None:
-                    logits = self._top_p_filtering(logits,top_p)
+                    logits = self._top_p_filtering(logits, top_p)
                 # apply softmax to get probabilities
-                probs = F.softmax(logits, dim=-1)                       # (B,C)
+                probs = F.softmax(logits, dim=-1)  # (B,C)
                 # sample from the distribution
-                index_next = torch.multinomial(probs,num_samples=1)     # (B,1)
+                index_next = torch.multinomial(probs, num_samples=1)  # (B,1)
             # append sampled index to the running sequence
-            index = torch.cat((index, index_next), dim=1)               # (B,T+1)
+            index = torch.cat((index, index_next), dim=1)  # (B,T+1)
         return index
-    
+
     def _apply_repetition_penalty(self, logits, previous_tokens, penalty):
         """
         Apply repetition penalty to logits
@@ -206,9 +212,9 @@ class GPTLanguageModel(nn.Module):
                     logits[i, token] /= penalty
                 else:
                     logits[i, token] *= penalty
-        
+
         return logits
-    
+
     def _top_k_filtering(self, logits, top_k):
         """
         Filter logits to only keep top k tokens
@@ -220,7 +226,7 @@ class GPTLanguageModel(nn.Module):
         Returns:
             Filitered logits with only top k values, rest set to -inf
         """
-        top_k = min(top_k, logits.size(-1))                             # Safety check
+        top_k = min(top_k, logits.size(-1))  # Safety check
 
         # Get top k values and indices
         top_k_values, top_k_indices = torch.topk(logits, top_k, dim=-1)
@@ -232,7 +238,7 @@ class GPTLanguageModel(nn.Module):
         logits = logits.masked_fill(indices_to_remove, float('-inf'))
 
         return logits
-    
+
     def _top_p_filtering(self, logits, top_p):
         """
         Nucleus sampling: filter logits to keep tokens with cumalative probability >= top_p
@@ -240,7 +246,7 @@ class GPTLanguageModel(nn.Module):
         Args:
             logits: (B, C) unnormalized log probabilities
             top_p: cumulative probability threshold (e.g., 0.9)
-        
+
         Returns:
             Filtered logits with only nuclues tokens, rest set to -inf
         """
@@ -261,7 +267,7 @@ class GPTLanguageModel(nn.Module):
         indices_to_remove = torch.zeros_like(logits, dtype=torch.bool)
         for i in range(logits.size(0)):
             indices_to_remove[i, sorted_indices[i]] = sorted_indices_to_remove[i]
-        
+
         # Set filtered values to -inf
         logits = logits.masked_fill(indices_to_remove, float('-inf'))
 

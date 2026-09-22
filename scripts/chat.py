@@ -11,26 +11,47 @@ import argparse
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.model import GPTLanguageModel
 from src.tokenizer import CharacterTokenizer
 from src.checkpoint import load_checkpoint
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Interactive GPT chatbot')
-parser.add_argument('-model', type=str, default='model_final.pt', 
-                    help='Model filename in models/checkpoints/ (default: model_final.pt)')
-parser.add_argument('-max_tokens', type=int, default=150,
-                    help='Maximum tokens to generate (default: 150)')
-parser.add_argument('-temperature', type=float, default=1.0,
-                    help='Sampling temperature 0.0=greedy, 1.0=normal, >1.0=creative (default: 1.0)')
-parser.add_argument('-top_k', type=int, default=None,
-                    help='Top-k sampling: only sample from top k tokens (default: None)')
-parser.add_argument('-top_p', type=float, default=None,
-                    help='Nucleus sampling: sample from tokens with cumulative prob >= p (default: None)')
-parser.add_argument('-repetition_penalty', type=float, default=1.0,
-                    help='Penalty for repeating tokens, >1.0 discourages repetition (default: 1.0)')
-parser.add_argument('-stream', action='store_true',
-                    help='Stream output token by token (experimental)')
+parser.add_argument(
+    '-model',
+    type=str,
+    default='model_final.pt',
+    help='Model filename in models/checkpoints/ (default: model_final.pt)',
+)
+parser.add_argument(
+    '-max_tokens', type=int, default=150, help='Maximum tokens to generate (default: 150)'
+)
+parser.add_argument(
+    '-temperature',
+    type=float,
+    default=1.0,
+    help='Sampling temperature 0.0=greedy, 1.0=normal, >1.0=creative (default: 1.0)',
+)
+parser.add_argument(
+    '-top_k',
+    type=int,
+    default=None,
+    help='Top-k sampling: only sample from top k tokens (default: None)',
+)
+parser.add_argument(
+    '-top_p',
+    type=float,
+    default=None,
+    help='Nucleus sampling: sample from tokens with cumulative prob >= p (default: None)',
+)
+parser.add_argument(
+    '-repetition_penalty',
+    type=float,
+    default=1.0,
+    help='Penalty for repeating tokens, >1.0 discourages repetition (default: 1.0)',
+)
+parser.add_argument(
+    '-stream', action='store_true', help='Stream output token by token (experimental)'
+)
 
 args = parser.parse_args()
 
@@ -51,12 +72,14 @@ if not os.path.exists(MODEL_FILE):
         models = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pt')]
         if models:
             for m in sorted(models):
-                size_mb = os.path.getsize(os.path.join(checkpoint_dir, m)) / (1024*1024)
+                size_mb = os.path.getsize(os.path.join(checkpoint_dir, m)) / (1024 * 1024)
                 print(f"  - {m} ({size_mb:.1f} MB)")
-            print(f"\nUsage: python scripts/chat.py -model <filename>")
+            print("\nUsage: python scripts/chat.py -model <filename>")
         else:
             print("  (no models found)")
-            print("\nPlease train a model first using: python scripts/train.py -batch_size 32 -max_iters 5000")
+            print(
+                "\nPlease train a model first using: python scripts/train.py -batch_size 32 -max_iters 5000"
+            )
     sys.exit(1)
 
 # Load tokenizer
@@ -124,41 +147,41 @@ def show_config():
 def generate_streaming(context, max_tokens):
     """Generate text with streaming output (token by token)"""
     print("\nCompletion:\n", end="", flush=True)
-    
+
     generated_text = tokenizer.decode(context[0].tolist())
     print(generated_text, end="", flush=True)
-    
+
     with torch.no_grad():
         for _ in range(max_tokens):
             # Crop context to block_size
-            index_cond = context[:, -model.block_size:]
-            
+            index_cond = context[:, -model.block_size :]
+
             # Get predictions
             logits, _ = model.forward(index_cond)
             logits = logits[:, -1, :]
-            
+
             # Apply sampling parameters
             if args.temperature == 0.0:
                 idx_next = torch.argmax(logits, dim=-1, keepdim=True)
             else:
                 logits = logits / args.temperature
-                
+
                 if args.top_k is not None:
                     logits = model._top_k_filtering(logits, args.top_k)
-                
+
                 if args.top_p is not None:
                     logits = model._top_p_filtering(logits, args.top_p)
-                
+
                 probs = torch.nn.functional.softmax(logits, dim=-1)
                 idx_next = torch.multinomial(probs, num_samples=1)
-            
+
             # Append to context
             context = torch.cat((context, idx_next), dim=1)
-            
+
             # Decode and print new token
             new_char = tokenizer.decode([idx_next.item()])
             print(new_char, end="", flush=True)
-    
+
     print("\n")
     return context
 
@@ -170,7 +193,7 @@ while True:
 
         if not prompt:
             continue
-        
+
         # Handle commands
         if prompt.lower() in ['quit', 'exit']:
             print("\nGoodbye!")
@@ -179,11 +202,11 @@ while True:
         if prompt.lower() == 'clear':
             print("\n" * 2)
             continue
-        
+
         if prompt.lower() == 'config':
             show_config()
             continue
-        
+
         if prompt.lower() == 'help':
             print("\nCommands:")
             print("  'quit' or 'exit' - Exit the chatbot")
@@ -216,14 +239,14 @@ while True:
                     temperature=args.temperature,
                     top_k=args.top_k,
                     top_p=args.top_p,
-                    repetition_penalty=args.repetition_penalty
+                    repetition_penalty=args.repetition_penalty,
                 )
-            
+
             # Decode and print
             output = tokenizer.decode(generated[0].tolist())
             print("\r" + " " * 20)  # Clear "Generating..."
             print(f"Completion:\n{output}\n")
-        
+
         print("-" * 70)
 
     except KeyboardInterrupt:
@@ -233,5 +256,6 @@ while True:
     except Exception as e:
         print(f"\nError: {e}")
         import traceback
+
         traceback.print_exc()
         print("Try a different prompt.\n")

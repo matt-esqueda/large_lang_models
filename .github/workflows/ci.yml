@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.16.8
+      - run: ruff check .
+      - run: ruff format --check .
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install CPU torch
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Prepare data
+        run: python scripts/prepare_data.py
+      - name: Verify vocabulary invariant
+        run: python .github/scripts/check_vocab.py
+      - name: Train briefly
+        run: python scripts/train.py -batch_size 8 -max_iters 6 -eval_iters 2 -eval_interval 5 -checkpoint_interval 5 -block_size 16 -n_layer 2 -n_head 2 -n_embd 32
+      - name: Reload checkpoint on CPU
+        run: python .github/scripts/check_checkpoint.py

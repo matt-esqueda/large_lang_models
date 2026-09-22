@@ -13,8 +13,9 @@ import torch
 CHECKPOINT_VERSION = 1
 
 
-def save_checkpoint(path, model, optimizer=None, iteration=0,
-                    train_loss=None, val_loss=None, vocab_size=None):
+def save_checkpoint(
+    path, model, optimizer=None, iteration=0, train_loss=None, val_loss=None, vocab_size=None
+):
     """Save a checkpoint atomically.
 
     Writes to a temporary file first, then renames. An interrupted save
