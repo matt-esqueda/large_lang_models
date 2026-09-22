@@ -34,8 +34,7 @@ class CharacterTokenizer:
             return [self.string_to_int[c] for c in text]
         except KeyError as e:
             raise ValueError(
-                f"Character {e.args[0]!r} is not in the vocabulary "
-                f"({self.vocab_size} characters)"
+                f"Character {e.args[0]!r} is not in the vocabulary ({self.vocab_size} characters)"
             ) from None
 
     def decode(self, indices):
