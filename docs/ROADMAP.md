@@ -13,8 +13,9 @@ Living document. Update it in the same PR that changes anything here.
 |---|--------|-------|--------|
 | 1 | `fix/reproducible-setup` | clone reproducibility, requirements, line endings | in review |
 | 2 | `fix/silent-correctness-bugs` | `_init_weights`, `self.device`, checkpoint interval, tokenizer | merged |
-| 3 | `refactor/state-dict-checkpoints` | replace pickle with `state_dict` + optimizer state | in review |
-| 4 | `refactor/shared-data-pipeline` | in-memory corpus, dedupe `resume_training.py` | planned |
+| 3 | `refactor/state-dict-checkpoints` | replace pickle with `state_dict` + optimizer state | merged |
+| 4a | `chore/tooling` | ruff, pre-commit, CI | merged |
+| 4b | `refactor/shared-data-pipeline` | in-memory corpus, batch sampling, seeding | in review |
 | 5 | `test/core-invariants` | real pytest suite | planned |
 | 6 | `refactor/package-layout` | installable package, CLI entry points, config wiring | planned |
 | 7 | `docs/readme-accuracy` | README reconciliation | planned |
@@ -197,14 +198,14 @@ Struck through = fixed.
   from `model_final.pkl` silently restarts the counter at 0.
 
 ### Training quality (PR 4)
-- Every batch re-reads the entire split file from disk, then slices ~2KB.
+- ~~Every batch re-reads the entire split file from disk, then slices ~2KB.
   One `estimate_loss()` call performs 200 full-file reads.
-- All `batch_size` sequence starts are drawn from a single ~2100-char
+- ~~All `batch_size` sequence starts are drawn from a single ~2100-char
   window, so "32 independent samples" are overlapping slices of two
   paragraphs.
 - Post-norm blocks with no warmup, no LR schedule, no gradient clipping.
   Survivable at 6 layers, not at 12. Prefer pre-norm.
-- No seeding anywhere - runs are not reproducible.
+- ~~No seeding anywhere - runs are not reproducible.
 - `n_embd % n_head` unchecked; bad values fail deep in the residual add.
 - Tokenizer `encode` raises `KeyError` on any out-of-vocab character. Most
   likely first-run failure for a new user typing a digit into `chat.py`.
@@ -213,7 +214,7 @@ Struck through = fixed.
 - `src/__init__.py` eagerly imports the model, so `prepare_data.py` cannot
   run without torch installed even though it only needs the tokenizer.
   Make the package import lazy.
-- `resume_training.py` duplicates ~150 lines of `train.py` by copy-paste;
+- ~~`resume_training.py` duplicates ~150 lines of `train.py` by copy-paste;
   the copies have already drifted on `block_size` handling.
 - `test_training.py` is a smoke script, not a test suite. It asserts an
   exact checkpoint count, so it fails on any machine that has trained
@@ -238,6 +239,8 @@ Struck through = fixed.
 | 2026-09 | `makedirs` in code over `.gitkeep` | `.gitignore` has a bare `logs/` rule that would ignore a `.gitkeep` |
 | 2026-09 | Correctness before restructuring | Restructuring touches every file; one clean diff set |
 | 2026-09 | Squash merge | Readable, revertable `main` history |
+| 2026-09 | Tokenize corpus once into memory | ~5x faster per iteration; removes 200 full-file reads per eval |
+| 2026-09 | Sample batch starts across the whole corpus | Old sampler drew all starts from one ~2100-char window, so batches were correlated |
 | 2026-09 | `.pt` state_dict checkpoints over pickle | Survives refactors, loads cross-device, no arbitrary code execution |
 | 2026-09 | Add ruff early (PR 4) | Repo has trailing whitespace on blank lines, which repeatedly broke exact-match patching |
 
@@ -255,3 +258,12 @@ Struck through = fixed.
 - Reframe "chatbot": a base LM trained on next-token prediction over one
   book is a text continuer, not a chat model. Instruction tuning is a
   separate, much larger effort.
+
+---
+
+## 9. Note on comparing runs
+
+PR 4b changed both the batch sampler and added seeding. Loss curves from
+before that change are not comparable to curves after it: the old sampler
+drew every sequence in a batch from the same small window, so the effective
+gradient noise was different. Treat 2026-09 as a baseline reset.

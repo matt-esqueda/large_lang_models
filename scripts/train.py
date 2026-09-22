@@ -7,7 +7,6 @@ Enhanced with checkpointing and metrics logging
 import os
 import sys
 import torch
-import random
 import argparse
 import csv
 from datetime import datetime
@@ -19,6 +18,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.model import GPTLanguageModel
 from src.tokenizer import CharacterTokenizer
 from src.checkpoint import save_checkpoint as save_ckpt
+from src.data import CorpusDataset, set_seed
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Train GPT Language Model')
@@ -39,6 +39,7 @@ parser.add_argument('-n_embd', type=int, default=384, help='Embedding dimension'
 parser.add_argument('-n_head', type=int, default=6, help='Number of attention heads')
 parser.add_argument('-n_layer', type=int, default=6, help='Number of transformer layers')
 parser.add_argument('-dropout', type=float, default=0.2, help='Dropout rate')
+parser.add_argument('-seed', type=int, default=None, help='Random seed for reproducible runs')
 
 args = parser.parse_args()
 
@@ -80,50 +81,13 @@ tokenizer = CharacterTokenizer(VOCAB_FILE)
 vocab_size = tokenizer.vocab_size
 print(f"Vocabulary size: {vocab_size}")
 
+if args.seed is not None:
+    set_seed(args.seed)
+    print(f"Random seed: {args.seed}")
 
-def get_random_chunk(split):
-    """Read a random chunk of text from file"""
-    filename = TRAIN_FILE if split == 'train' else VAL_FILE
-
-    with open(filename, 'r', encoding='utf-8') as f:
-        text = f.read()
-
-    # Calculate how many characters we need
-    required_chars = block_size * batch_size + block_size
-
-    if len(text) < required_chars:
-        # If file is smaller, just use the whole thing
-        data = torch.tensor(tokenizer.encode(text), dtype=torch.long)
-    else:
-        # Pick a random starting point
-        start_idx = random.randint(0, len(text) - required_chars)
-        chunk = text[start_idx : start_idx + required_chars]
-        data = torch.tensor(tokenizer.encode(chunk), dtype=torch.long)
-
-    return data
-
-
-def get_batch(split):
-    """Generate a batch of data"""
-    data = get_random_chunk(split)
-
-    # Ensure we have enough data
-    if len(data) <= block_size:
-        raise ValueError(
-            f"Data chunk too small: {len(data)} tokens, need at least {block_size + 1}"
-        )
-
-    # Generate random indices
-    max_idx = len(data) - block_size - 1
-    if max_idx < 1:
-        raise ValueError(f"Not enough tokens in data: {len(data)}")
-
-    ix = torch.randint(0, max_idx, (batch_size,))
-
-    x = torch.stack([data[i : i + block_size] for i in ix])
-    y = torch.stack([data[i + 1 : i + block_size + 1] for i in ix])
-    x, y = x.to(device), y.to(device)
-    return x, y
+dataset = CorpusDataset(TRAIN_FILE, VAL_FILE, tokenizer, device=device)
+print(f"Train tokens: {dataset.token_count('train'):,}")
+print(f"Val tokens:   {dataset.token_count('val'):,}")
 
 
 @torch.no_grad()
@@ -134,7 +98,7 @@ def estimate_loss():
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
-            X, Y = get_batch(split)
+            X, Y = dataset.get_batch(split, batch_size, block_size)
             logits, loss = model(X, Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
@@ -280,7 +244,7 @@ for iter in range(max_iters):
         last_checkpoint_time = time.time()
 
     # Get batch and compute loss
-    xb, yb = get_batch('train')
+    xb, yb = dataset.get_batch('train', batch_size, block_size)
     logits, loss = model(xb, yb)
 
     # Backward pass
