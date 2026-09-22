@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.tokenizer import CharacterTokenizer
 from src.checkpoint import load_checkpoint, save_checkpoint as save_ckpt
+from src.data import CorpusDataset, set_seed
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Resume training from checkpoint')
@@ -38,6 +39,7 @@ parser.add_argument(
 parser.add_argument(
     '-checkpoint_interval', type=int, default=500, help='Save checkpoint every N iterations'
 )
+parser.add_argument('-seed', type=int, default=None, help='Random seed for reproducible runs')
 
 args = parser.parse_args()
 
@@ -71,6 +73,12 @@ print("\nLoading tokenizer...")
 tokenizer = CharacterTokenizer(VOCAB_FILE)
 vocab_size = tokenizer.vocab_size
 print(f"Vocabulary size: {vocab_size}")
+
+if args.seed is not None:
+    set_seed(args.seed)
+    print(f"Random seed: {args.seed}")
+
+dataset = CorpusDataset(TRAIN_FILE, VAL_FILE, tokenizer, device=device)
 
 # Load checkpoint
 print(f"\nLoading checkpoint from {CHECKPOINT_PATH}...")
@@ -107,50 +115,6 @@ if 'optimizer_state' in _ckpt_raw:
 else:
     print('Warning: checkpoint has no optimizer state; starting fresh')
 
-# Import training functions from train.py
-import random
-
-
-def get_random_chunk(split):
-    """Read a random chunk of text from file"""
-    filename = TRAIN_FILE if split == 'train' else VAL_FILE
-
-    with open(filename, 'r', encoding='utf-8') as f:
-        text = f.read()
-
-    block_size = model.block_size
-    batch_size = args.batch_size
-    required_chars = block_size * batch_size + block_size
-
-    if len(text) < required_chars:
-        data = torch.tensor(tokenizer.encode(text), dtype=torch.long)
-    else:
-        start_idx = random.randint(0, len(text) - required_chars)
-        chunk = text[start_idx : start_idx + required_chars]
-        data = torch.tensor(tokenizer.encode(chunk), dtype=torch.long)
-
-    return data
-
-
-def get_batch(split):
-    """Generate a batch of data"""
-    data = get_random_chunk(split)
-    block_size = model.block_size
-
-    if len(data) <= block_size:
-        raise ValueError(f"Data chunk too small: {len(data)} tokens")
-
-    max_idx = len(data) - block_size - 1
-    if max_idx < 1:
-        raise ValueError(f"Not enough tokens in data: {len(data)}")
-
-    ix = torch.randint(0, max_idx, (args.batch_size,))
-
-    x = torch.stack([data[i : i + block_size] for i in ix])
-    y = torch.stack([data[i + 1 : i + block_size + 1] for i in ix])
-    x, y = x.to(device), y.to(device)
-    return x, y
-
 
 @torch.no_grad()
 def estimate_loss():
@@ -160,7 +124,7 @@ def estimate_loss():
     for split in ['train', 'val']:
         losses = torch.zeros(args.eval_iters)
         for k in range(args.eval_iters):
-            X, Y = get_batch(split)
+            X, Y = dataset.get_batch(split, args.batch_size, model.block_size)
             logits, loss = model(X, Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
@@ -280,7 +244,7 @@ for iter in range(args.additional_iters):
             save_checkpoint(current_iter, losses['train'], losses['val'])
 
     # Training step
-    xb, yb = get_batch('train')
+    xb, yb = dataset.get_batch('train', args.batch_size, model.block_size)
     logits, loss = model(xb, yb)
 
     optimizer.zero_grad(set_to_none=True)
