@@ -14,7 +14,7 @@ class CharacterTokenizer:
 
     def __init__(self, vocab_file):
         """Load vocabulary from file."""
-        with open(vocab_file, "r", encoding="utf-8") as f:
+        with open(vocab_file, encoding="utf-8") as f:
             chars = json.load(f)
 
         if len(chars) != len(set(chars)):
@@ -48,7 +48,7 @@ class CharacterTokenizer:
         Reads with utf-8-sig so a leading byte-order mark is stripped rather
         than becoming a vocabulary entry.
         """
-        with open(text_file, "r", encoding="utf-8-sig") as f:
+        with open(text_file, encoding="utf-8-sig") as f:
             text = f.read()
 
         chars = sorted(set(text))

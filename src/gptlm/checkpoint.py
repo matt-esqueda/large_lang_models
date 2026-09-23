@@ -8,6 +8,7 @@ which makes a GPU-trained checkpoint unloadable on a CPU-only machine.
 """
 
 import os
+
 import torch
 
 CHECKPOINT_VERSION = 1
@@ -56,7 +57,7 @@ def load_checkpoint(path, device="cpu", model_class=None, optimizer=None):
     optimizer state, that state is restored in place.
     """
     if model_class is None:
-        from src.model import GPTLanguageModel as model_class
+        from gptlm.model import GPTLanguageModel as model_class
 
     payload = torch.load(path, map_location=device, weights_only=False)
 

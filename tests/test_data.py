@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from src.data import CorpusDataset, set_seed
+from gptlm.data import CorpusDataset, set_seed
 
 N = 10_000
 BATCH, BLOCK = 64, 16
@@ -59,7 +59,7 @@ def test_same_seed_gives_same_batches(positional):
     first = [positional.get_batch("train", BATCH, BLOCK) for _ in range(3)]
     set_seed(1234)
     second = [positional.get_batch("train", BATCH, BLOCK) for _ in range(3)]
-    for (x1, y1), (x2, y2) in zip(first, second):
+    for (x1, y1), (x2, y2) in zip(first, second, strict=True):
         assert torch.equal(x1, x2)
         assert torch.equal(y1, y2)
 

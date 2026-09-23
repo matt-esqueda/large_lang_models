@@ -3,11 +3,12 @@
 Plot training metrics from CSV log files
 """
 
+import argparse
+import csv
+import glob
 import os
 import sys
-import argparse
-import glob
-import csv
+
 import matplotlib.pyplot as plt
 
 # Argument parser
@@ -30,7 +31,7 @@ def load_metrics(csv_file):
     train_losses = []
     val_losses = []
 
-    with open(csv_file, 'r') as f:
+    with open(csv_file) as f:
         reader = csv.DictReader(f)
         for row in reader:
             iterations.append(int(row['iteration']))
@@ -78,7 +79,7 @@ def plot_metrics(csv_file, output_file=None, show=False):
 
     # Plot 3: Loss Gap (Overfitting indicator)
     ax3 = axes[1, 0]
-    loss_gap = [val - train for train, val in zip(train_losses, val_losses)]
+    loss_gap = [val - train for train, val in zip(train_losses, val_losses, strict=True)]
     ax3.plot(iterations, loss_gap, 'g-', linewidth=2)
     ax3.axhline(y=0, color='k', linestyle='--', alpha=0.3)
     ax3.set_xlabel('Iteration')

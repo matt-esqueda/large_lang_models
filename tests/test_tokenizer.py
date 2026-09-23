@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.tokenizer import CharacterTokenizer
+from gptlm.tokenizer import CharacterTokenizer
 
 
 def test_round_trip_preserves_text(tokenizer, sample_text):

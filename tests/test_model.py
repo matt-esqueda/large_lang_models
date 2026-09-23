@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from src.model import GPTLanguageModel
+from gptlm.model import GPTLanguageModel
 
 B, T = 3, 16
 

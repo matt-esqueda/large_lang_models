@@ -5,12 +5,8 @@ Creates train/validation splits and vocab file.
 """
 
 import os
-import sys
 
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from src.tokenizer import CharacterTokenizer
+from gptlm.tokenizer import CharacterTokenizer
 
 # Configuration
 INPUT_FILE = "data/raw/wizard_of_oz.txt"
@@ -29,7 +25,7 @@ def prepare_data():
     print(f"Reading {INPUT_FILE}...")
 
     # Read the input file
-    with open(INPUT_FILE, 'r', encoding='utf-8-sig') as f:
+    with open(INPUT_FILE, encoding='utf-8-sig') as f:
         text = f.read()
 
         print(f"Total characters: {len(text):,}")

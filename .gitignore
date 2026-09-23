@@ -38,3 +38,6 @@ Thumbs.db
 
 # Training logs and output
 logs/
+
+# Packaging
+*.egg-info/

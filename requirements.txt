@@ -1,4 +1,4 @@
-# Core dependencies.
+# Dependencies are declared in pyproject.toml; this installs the package editable.
 # PyTorch is deliberately unpinned here. Install it FIRST, separately, using
 # the index that matches your hardware:
 #
@@ -9,8 +9,4 @@
 #   CPU-only:
 #     pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-torch>=2.5
-numpy>=1.24
-matplotlib>=3.7
-PyYAML>=6.0
-pytest>=8.0
+-e .[dev]

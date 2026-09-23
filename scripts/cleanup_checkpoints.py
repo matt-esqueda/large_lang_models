@@ -4,12 +4,12 @@ Cleanup checkpoint files to save disk space
 Keeps only best N checkpoints based on specified criteria
 """
 
-import os
-import sys
 import argparse
-import glob
-import re
 import csv
+import glob
+import os
+import re
+import sys
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Cleanup model checkpoints')
@@ -105,7 +105,7 @@ elif args.strategy == 'best_val':
 
     # Read metrics
     val_losses = {}
-    with open(args.metrics, 'r') as f:
+    with open(args.metrics) as f:
         reader = csv.DictReader(f)
         for row in reader:
             iteration = int(row['iteration'])
