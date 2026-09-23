@@ -6,7 +6,7 @@ Living document. Update it in the same PR that changes anything here.
 
 ## 1. Status
 
-**Active branch:** `test/core-invariants`
+**Active branch:** `refactor/package-layout`
 **Phase:** hardening an existing prototype before restructuring.
 
 | # | Branch | Scope | Status |
@@ -16,9 +16,10 @@ Living document. Update it in the same PR that changes anything here.
 | 3 | `refactor/state-dict-checkpoints` | replace pickle with `state_dict` + optimizer state | merged |
 | 4a | `chore/tooling` | ruff, pre-commit, CI | merged |
 | 4b | `refactor/shared-data-pipeline` | in-memory corpus, batch sampling, seeding | merged |
-| 5 | `test/core-invariants` | real pytest suite | in review |
-| 6 | `refactor/package-layout` | installable package, CLI entry points, config wiring | planned |
-| 7 | `docs/readme-accuracy` | README reconciliation | planned |
+| 5 | `test/core-invariants` | real pytest suite | merged |
+| 6 | `refactor/package-layout` | installable `gptlm` package, lazy imports, stricter lint, checkpoint loading fixes | merged |
+| 7 | `feat/cli-config` | CLI entry points, `--double-dash` flags, `config.yaml` as the single source of defaults | planned |
+| 8 | `docs/readme-accuracy` | README reconciliation | planned |
 
 Correctness before restructuring. Migrating broken code produces
 well-organized bugs.
@@ -52,6 +53,9 @@ Always. After a squash merge the local branch history no longer matches
 ### Rules
 - Never push the same branch from both machines. To move in-progress work:
   push the branch, pull it on the other machine, continue there only.
+- After pulling a change to `pyproject.toml` or `requirements.txt`, rerun
+  `pip install -r requirements.txt`. Since PR 6 the package is installed
+  editable; a machine that has not reinstalled cannot `import gptlm`.
 - Checkpoints and logs are gitignored and do NOT sync. Move manually or
   retrain.
 - Clone into the Linux filesystem (`~/projects`), never `/mnt/c`. The 9p
@@ -210,30 +214,30 @@ Struck through = fixed.
 - ~~Tokenizer `encode` raises `KeyError` on any out-of-vocab character. Most
   likely first-run failure for a new user typing a digit into `chat.py`.~~
 
-### Structure (PR 5-7)
-- `src/__init__.py` eagerly imports the model, so `prepare_data.py` cannot
+### Structure (PR 5-8)
+- ~~`src/__init__.py` eagerly imports the model, so `prepare_data.py` cannot
   run without torch installed even though it only needs the tokenizer.
-  Make the package import lazy.
+  Make the package import lazy.~~
 - ~~`resume_training.py` duplicates ~150 lines of `train.py` by copy-paste;
   the copies have already drifted on `block_size` handling.
 - ~~`test_training.py` is a smoke script, not a test suite. It asserts an
   exact checkpoint count, so it fails on any machine that has trained
   before. Non-idempotent.~~
-- `load_checkpoint(optimizer=...)` cannot work: an optimizer must be built
+- ~~`load_checkpoint(optimizer=...)` cannot work: an optimizer must be built
   from the returned model's parameters, which do not exist until the call
   returns. `resume_training.py` re-reads the raw payload instead. Drop the
-  parameter or return the optimizer state in the metadata.
-- `load_checkpoint` passes `weights_only=False`, contradicting the
+  parameter or return the optimizer state in the metadata.~~
+- ~~`load_checkpoint` passes `weights_only=False`, contradicting the
   "no arbitrary code execution" decision. The payload is tensors and
   primitives only (see `test_checkpoint_loads_with_weights_only`), so
-  switching to `True` is safe.
-- Checkpoint config omits `dropout`; `load_checkpoint` always rebuilds with
-  the default 0.2.
+  switching to `True` is safe.~~
+- ~~Checkpoint config omits `dropout`; `load_checkpoint` always rebuilds with
+  the default 0.2.~~
 - `chat.py` has two divergent generation paths; the streaming path silently
   drops `repetition_penalty` and reaches into `model._top_k_filtering`.
 - `config/config.yaml` is dead - nothing imports yaml. Values are
   triplicated across the YAML, argparse defaults, and module constants.
-- Seven scripts use `sys.path.append` instead of an installed package.
+- ~~Seven scripts use `sys.path.append` instead of an installed package.~~
 - Five scripts are undocumented in the README.
 - Single-dash long flags (`-batch_size`) are non-standard; use `--batch-size`.
 - `data/raw/wizard_of_oz.txt` is committed; should be a download script.
@@ -255,6 +259,10 @@ Struck through = fixed.
 | 2026-09 | Add ruff early (PR 4) | Repo has trailing whitespace on blank lines, which repeatedly broke exact-match patching |
 | 2026-09 | Tests build all fixtures in `tmp_path` | Suite never reads `data/processed/` or `models/`, so it is idempotent on any machine and in CI |
 | 2026-09 | CUDA tests skip without a GPU | CI runners are CPU-only; cross-device checks run on both local machines |
+| 2026-09 | Package named `gptlm` in a `src/` layout | `src` is a poor installed name that collides with any project doing the same; the layout keeps tests running against the installed package |
+| 2026-09 | `requirements.txt` installs `-e .[dev]` | Dependencies live in `pyproject.toml`; the setup command and CI stay unchanged |
+| 2026-09 | Checkpoints load with `weights_only=True` | Payload is tensors and primitives only; a crafted file cannot run code |
+| 2026-09 | CLI and config work split out of PR 6 | All seven scripts run at module level; converting them is a large change that deserves its own review |
 
 ---
 
