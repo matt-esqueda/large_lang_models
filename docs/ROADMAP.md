@@ -6,17 +6,17 @@ Living document. Update it in the same PR that changes anything here.
 
 ## 1. Status
 
-**Active branch:** `fix/reproducible-setup`
+**Active branch:** `test/core-invariants`
 **Phase:** hardening an existing prototype before restructuring.
 
 | # | Branch | Scope | Status |
 |---|--------|-------|--------|
-| 1 | `fix/reproducible-setup` | clone reproducibility, requirements, line endings | in review |
+| 1 | `fix/reproducible-setup` | clone reproducibility, requirements, line endings | merged |
 | 2 | `fix/silent-correctness-bugs` | `_init_weights`, `self.device`, checkpoint interval, tokenizer | merged |
 | 3 | `refactor/state-dict-checkpoints` | replace pickle with `state_dict` + optimizer state | merged |
 | 4a | `chore/tooling` | ruff, pre-commit, CI | merged |
-| 4b | `refactor/shared-data-pipeline` | in-memory corpus, batch sampling, seeding | in review |
-| 5 | `test/core-invariants` | real pytest suite | planned |
+| 4b | `refactor/shared-data-pipeline` | in-memory corpus, batch sampling, seeding | merged |
+| 5 | `test/core-invariants` | real pytest suite | in review |
 | 6 | `refactor/package-layout` | installable package, CLI entry points, config wiring | planned |
 | 7 | `docs/readme-accuracy` | README reconciliation | planned |
 
@@ -162,7 +162,7 @@ git checkout main && git pull origin main
 
 ### Definition of done
 - [ ] Verified on a clean clone, not just the working copy
-- [ ] Tests pass (once a suite exists)
+- [ ] Tests pass: `pytest` locally, including the CUDA tests on a GPU machine
 - [ ] ROADMAP.md updated if status, decisions, or known issues changed
 - [ ] README updated if user-facing behavior changed
 
@@ -177,15 +177,15 @@ Struck through = fixed.
 - ~~`matplotlib` undeclared but imported by `plot_training.py`~~
 - ~~`requirements.txt` pinned nightly wheels plus all transitive CUDA packages~~
 
-### Correctness (PR 2)
-- `_init_weights`: the `elif isinstance(module, nn.Embedding)` branch is
+### Correctness (PR 2) - FIXED
+- ~~`_init_weights`: the `elif isinstance(module, nn.Embedding)` branch is
   nested inside the `nn.Linear` branch and is unreachable. Embeddings keep
-  the default `N(0,1)` instead of `N(0,0.02)` - a 50x larger initial scale.
-- `self.device` is a string captured at construction. `.to(device)` does not
+  the default `N(0,1)` instead of `N(0,0.02)` - a 50x larger initial scale.~~
+- ~~`self.device` is a string captured at construction. `.to(device)` does not
   update it, so `torch.arange(T, device=self.device)` fails when a
-  GPU-built model is loaded on CPU. Use `index.device`.
-- `checkpoint_interval` is silently ignored unless it divides
-  `eval_interval` - the save block is nested inside the eval block.
+  GPU-built model is loaded on CPU. Use `index.device`.~~
+- ~~`checkpoint_interval` is silently ignored unless it divides
+  `eval_interval` - the save block is nested inside the eval block.~~
 
 ### Checkpoints (PR 3) - FIXED
 - ~~`pickle.dump(model)` stores the class import path; renaming anything in
@@ -206,9 +206,9 @@ Struck through = fixed.
 - Post-norm blocks with no warmup, no LR schedule, no gradient clipping.
   Survivable at 6 layers, not at 12. Prefer pre-norm.
 - ~~No seeding anywhere - runs are not reproducible.
-- `n_embd % n_head` unchecked; bad values fail deep in the residual add.
-- Tokenizer `encode` raises `KeyError` on any out-of-vocab character. Most
-  likely first-run failure for a new user typing a digit into `chat.py`.
+- ~~`n_embd % n_head` unchecked; bad values fail deep in the residual add.~~
+- ~~Tokenizer `encode` raises `KeyError` on any out-of-vocab character. Most
+  likely first-run failure for a new user typing a digit into `chat.py`.~~
 
 ### Structure (PR 5-7)
 - `src/__init__.py` eagerly imports the model, so `prepare_data.py` cannot
@@ -216,9 +216,19 @@ Struck through = fixed.
   Make the package import lazy.
 - ~~`resume_training.py` duplicates ~150 lines of `train.py` by copy-paste;
   the copies have already drifted on `block_size` handling.
-- `test_training.py` is a smoke script, not a test suite. It asserts an
+- ~~`test_training.py` is a smoke script, not a test suite. It asserts an
   exact checkpoint count, so it fails on any machine that has trained
-  before. Non-idempotent.
+  before. Non-idempotent.~~
+- `load_checkpoint(optimizer=...)` cannot work: an optimizer must be built
+  from the returned model's parameters, which do not exist until the call
+  returns. `resume_training.py` re-reads the raw payload instead. Drop the
+  parameter or return the optimizer state in the metadata.
+- `load_checkpoint` passes `weights_only=False`, contradicting the
+  "no arbitrary code execution" decision. The payload is tensors and
+  primitives only (see `test_checkpoint_loads_with_weights_only`), so
+  switching to `True` is safe.
+- Checkpoint config omits `dropout`; `load_checkpoint` always rebuilds with
+  the default 0.2.
 - `chat.py` has two divergent generation paths; the streaming path silently
   drops `repetition_penalty` and reaches into `model._top_k_filtering`.
 - `config/config.yaml` is dead - nothing imports yaml. Values are
@@ -243,14 +253,16 @@ Struck through = fixed.
 | 2026-09 | Sample batch starts across the whole corpus | Old sampler drew all starts from one ~2100-char window, so batches were correlated |
 | 2026-09 | `.pt` state_dict checkpoints over pickle | Survives refactors, loads cross-device, no arbitrary code execution |
 | 2026-09 | Add ruff early (PR 4) | Repo has trailing whitespace on blank lines, which repeatedly broke exact-match patching |
+| 2026-09 | Tests build all fixtures in `tmp_path` | Suite never reads `data/processed/` or `models/`, so it is idempotent on any machine and in CI |
+| 2026-09 | CUDA tests skip without a GPU | CI runners are CPU-only; cross-device checks run on both local machines |
 
 ---
 
 ## 8. Backlog (post-hardening)
 
 - Branch protection on `main`: require passing CI, block direct pushes
-- GitHub Actions: ruff + pytest on push and PR
-- Pre-commit hooks
+- ~~GitHub Actions: ruff + pytest on push and PR~~
+- ~~Pre-commit hooks~~
 - LICENSE, CONTRIBUTING.md, CHANGELOG.md
 - BPE tokenization to replace char-level
 - Larger corpus with a download script
