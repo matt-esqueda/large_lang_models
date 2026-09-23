@@ -97,6 +97,14 @@ class GPTLanguageModel(nn.Module):
     ):
         super().__init__()
         self.block_size = block_size
+        self.config = {
+            "vocab_size": vocab_size,
+            "n_embd": n_embd,
+            "n_head": n_head,
+            "n_layer": n_layer,
+            "block_size": block_size,
+            "dropout": dropout,
+        }
 
         if n_embd % n_head != 0:
             raise ValueError(f"n_embd ({n_embd}) must be divisible by n_head ({n_head})")

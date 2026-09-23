@@ -105,9 +105,8 @@ metrics_file = os.path.join(LOG_DIR, f'resume_training_{timestamp}.csv')
 # Optimizer: restore moment estimates from the checkpoint. A fresh AdamW
 # discards them, which causes a visible loss bump on resume.
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
-_ckpt_raw = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=False)
-if 'optimizer_state' in _ckpt_raw:
-    optimizer.load_state_dict(_ckpt_raw['optimizer_state'])
+if ckpt_meta['optimizer_state'] is not None:
+    optimizer.load_state_dict(ckpt_meta['optimizer_state'])
     for _g in optimizer.param_groups:
         _g['lr'] = args.learning_rate
     print('Optimizer state restored from checkpoint')
