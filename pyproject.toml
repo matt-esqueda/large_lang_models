@@ -4,23 +4,38 @@ target-version = "py312"
 exclude = ["legacy", ".venv", "data", "models", "logs"]
 
 [tool.ruff.lint]
-# E/W pycodestyle, F pyflakes. Import sorting (I), pyupgrade (UP) and
-# bugbear (B) are deferred to PR 6: isort would hoist imports above the
-# sys.path.append that every script in scripts/ depends on.
-select = ["E", "W", "F"]
+# E/W pycodestyle, F pyflakes, I isort, UP pyupgrade, B bugbear.
+select = ["E", "W", "F", "I", "UP", "B"]
 ignore = [
     "E501",  # line length: enforced by the formatter, not the linter
     "E741",  # ambiguous variable names (l, I, O) - present in legacy-derived code
 ]
-
-[tool.ruff.lint.per-file-ignores]
-# Scripts must mutate sys.path before importing from src/.
-"scripts/*" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "preserve"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
 addopts = "-ra"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gptlm"
+version = "0.1.0"
+description = "Character-level GPT language model"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.5",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff==0.16.8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

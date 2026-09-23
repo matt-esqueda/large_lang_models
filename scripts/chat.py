@@ -3,16 +3,14 @@
 Interactive chatbot using trained GPT model with advanced sampling controls
 """
 
+import argparse
 import os
 import sys
+
 import torch
-import argparse
 
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from src.tokenizer import CharacterTokenizer
-from src.checkpoint import load_checkpoint
+from gptlm.checkpoint import load_checkpoint
+from gptlm.tokenizer import CharacterTokenizer
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Interactive GPT chatbot')

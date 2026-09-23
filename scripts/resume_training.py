@@ -3,20 +3,19 @@
 Resume training from a checkpoint
 """
 
-import os
-import sys
-import torch
 import argparse
 import csv
-from datetime import datetime
+import os
+import sys
 import time
+from datetime import datetime
 
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import torch
 
-from src.tokenizer import CharacterTokenizer
-from src.checkpoint import load_checkpoint, save_checkpoint as save_ckpt
-from src.data import CorpusDataset, set_seed
+from gptlm.checkpoint import load_checkpoint
+from gptlm.checkpoint import save_checkpoint as save_ckpt
+from gptlm.data import CorpusDataset, set_seed
+from gptlm.tokenizer import CharacterTokenizer
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Resume training from checkpoint')

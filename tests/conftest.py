@@ -8,8 +8,8 @@ machine that has trained before, and in CI.
 import pytest
 import torch
 
-from src.model import GPTLanguageModel
-from src.tokenizer import CharacterTokenizer
+from gptlm.model import GPTLanguageModel
+from gptlm.tokenizer import CharacterTokenizer
 
 SAMPLE_TEXT = (
     "Dorothy lived in the midst of the great Kansas prairies.\n\"Toto!\" she cried.\n\nThe end.\n"

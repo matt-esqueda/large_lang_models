@@ -4,17 +4,15 @@ Compare multiple model checkpoints side-by-side
 Generates the same prompts from each checkpoint to compare quality
 """
 
+import argparse
 import os
 import sys
-import torch
-import argparse
 from datetime import datetime
 
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import torch
 
-from src.tokenizer import CharacterTokenizer
-from src.checkpoint import load_checkpoint
+from gptlm.checkpoint import load_checkpoint
+from gptlm.tokenizer import CharacterTokenizer
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Compare multiple model checkpoints')

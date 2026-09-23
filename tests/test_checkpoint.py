@@ -5,7 +5,7 @@ import os
 import pytest
 import torch
 
-from src.checkpoint import load_checkpoint, save_checkpoint
+from gptlm.checkpoint import load_checkpoint, save_checkpoint
 
 
 def make_batch(vocab_size, seed=0, batch=4, length=16):

@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """Assert the character vocabulary matches the documented baseline."""
 
-import sys
-
-sys.path.insert(0, ".")
-from src.tokenizer import CharacterTokenizer
+from gptlm.tokenizer import CharacterTokenizer
 
 EXPECTED_SIZE = 80
 

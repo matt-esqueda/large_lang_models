@@ -26,7 +26,7 @@ class CorpusDataset:
         }
 
     def _load(self, path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             text = f.read()
         return torch.tensor(self.tokenizer.encode(text), dtype=torch.long)
 

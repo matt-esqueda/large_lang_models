@@ -4,21 +4,18 @@ Training script for GPT Language Model
 Enhanced with checkpointing and metrics logging
 """
 
-import os
-import sys
-import torch
 import argparse
 import csv
-from datetime import datetime
+import os
 import time
+from datetime import datetime
 
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import torch
 
-from src.model import GPTLanguageModel
-from src.tokenizer import CharacterTokenizer
-from src.checkpoint import save_checkpoint as save_ckpt
-from src.data import CorpusDataset, set_seed
+from gptlm.checkpoint import save_checkpoint as save_ckpt
+from gptlm.data import CorpusDataset, set_seed
+from gptlm.model import GPTLanguageModel
+from gptlm.tokenizer import CharacterTokenizer
 
 # Argument parser
 parser = argparse.ArgumentParser(description='Train GPT Language Model')
