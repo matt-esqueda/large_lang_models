@@ -1,40 +1,43 @@
-# GPT Language Model Configuration
+# Single source of default settings for every `gptlm` command.
+# Command-line flags override these values; `--config PATH` selects a
+# different file. Paths are relative to the directory you run from.
+#
+# Write exponents with a decimal point (3.0e-4): PyYAML follows YAML 1.1
+# and reads 3e-4 as a string.
 
-# Model Architecture
-model:
-  n_embd: 384             # Embedding dimension
-  n_head: 6               # Number of attention heads
-  n_layer: 6              # Number of transformer layers
-  block_size: 64          # Context window size
-  dropout: 0.2            # Dropout rate
-  vocab_size: null        # Set automatically from vocab size
+runtime:
+  device: auto               # auto | cuda | cpu
 
-# Training
-training:
-  batch_size: 32          # Batch size
-  max_iters: 5000         # Maximum taining iterations
-  learning_rate: 3e-4     # Learning rate
-  eval_iters: 100         # How often to evaluate
-  eval_interval: 500      # How often to print eval metrics
-
-# Data
 data:
-  vocab_file: data/processed/vocab.txt
+  raw_file: data/raw/wizard_of_oz.txt
   train_file: data/processed/train_split.txt
   val_file: data/processed/val_split.txt
-  train_split: 0.9        # Train/val split ratio
+  vocab_file: data/processed/vocab.txt
+  train_split: 0.9           # fraction of the corpus used for training
 
-# Paths
-paths:
-  model_dir: models/checkpoints
-  log_dir: logs
-  data_dir: data
+model:
+  n_embd: 384
+  n_head: 6
+  n_layer: 6
+  block_size: 64             # context window, in characters
+  dropout: 0.2
 
-# Generation
+training:
+  batch_size: 32
+  max_iters: 5000
+  learning_rate: 3.0e-4
+  eval_iters: 100            # batches averaged per loss estimate
+  eval_interval: 500         # estimate loss every N iterations
+  checkpoint_interval: 500   # save a checkpoint every N iterations
+  seed: null                 # set an integer for reproducible runs
+
 generation:
-  max_new_tokens: 150     # Max token to generate
-  temperature: 1.0        # Sampling temperature (not yet implemented)
-  top_k: null             # Top-k sampling (not yet implemented)
+  max_new_tokens: 150
+  temperature: 1.0           # 0.0 = greedy
+  top_k: null
+  top_p: null
+  repetition_penalty: 1.0
 
-# Device
-device: cuda              # 'cuda' or 'cpu'
+paths:
+  checkpoint_dir: models/checkpoints
+  log_dir: logs
