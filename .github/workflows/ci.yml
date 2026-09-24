@@ -34,9 +34,11 @@ jobs:
       - name: Verify vocabulary invariant
         run: python .github/scripts/check_vocab.py
       - name: Train briefly
-        run: python scripts/train.py -batch_size 8 -max_iters 6 -eval_iters 2 -eval_interval 5 -checkpoint_interval 5 -block_size 16 -n_layer 2 -n_head 2 -n_embd 32
+        run: gptlm train --batch-size 8 --max-iters 6 --eval-iters 2 --eval-interval 5 --checkpoint-interval 5 --block-size 16 --n-layer 2 --n-head 2 --n-embd 32
       - name: Reload checkpoint on CPU
         run: python .github/scripts/check_checkpoint.py
+      - name: Resume briefly
+        run: gptlm train --resume models/checkpoints/model_final.pt --max-iters 2 --batch-size 8 --eval-iters 2
 
   test:
     runs-on: ubuntu-latest
