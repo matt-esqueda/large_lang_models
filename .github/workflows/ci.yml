@@ -30,7 +30,7 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
       - name: Prepare data
-        run: python scripts/prepare_data.py
+        run: gptlm prepare
       - name: Verify vocabulary invariant
         run: python .github/scripts/check_vocab.py
       - name: Train briefly
@@ -41,6 +41,10 @@ jobs:
         run: gptlm train --resume models/checkpoints/model_final.pt --max-iters 2 --batch-size 8 --eval-iters 2
       - name: Generate briefly
         run: gptlm chat --prompt "Dorothy" --max-new-tokens 20
+      - name: Compare checkpoints briefly
+        run: gptlm compare models/checkpoints/model_iter5.pt models/checkpoints/model_final.pt --prompt Dorothy --max-new-tokens 20 --seed 0
+      - name: Plot metrics
+        run: gptlm plot
 
   test:
     runs-on: ubuntu-latest

@@ -22,6 +22,11 @@ def add_arguments(parser):
     )
     parser.add_argument("--prompt", help="complete this prompt once and exit")
     parser.add_argument("--stream", action="store_true", help="print characters as they arrive")
+    add_sampling_arguments(parser)
+
+
+def add_sampling_arguments(parser):
+    """Sampling flags shared by `chat` and `compare`."""
     sampling = parser.add_argument_group("sampling", "defaults: the config's generation section")
     sampling.add_argument("--max-new-tokens", type=int)
     sampling.add_argument("--temperature", type=float, help="0 = greedy; higher = more random")

@@ -6,10 +6,17 @@ defaults from config/config.yaml (or --config PATH); flags override them.
 
 import argparse
 
-from gptlm.cli import chat, train
+from gptlm.cli import chat, cleanup, compare, plot, prepare, train
 from gptlm.config import DEFAULT_PATH, load_config
 
-COMMANDS = {"train": train, "chat": chat}
+COMMANDS = {
+    "prepare": prepare,
+    "train": train,
+    "chat": chat,
+    "compare": compare,
+    "plot": plot,
+    "cleanup": cleanup,
+}
 
 
 def build_parser():
