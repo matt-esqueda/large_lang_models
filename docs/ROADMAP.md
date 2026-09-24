@@ -6,7 +6,6 @@ Living document. Update it in the same PR that changes anything here.
 
 ## 1. Status
 
-**Active branch:** `refactor/package-layout`
 **Phase:** hardening an existing prototype before restructuring.
 
 | # | Branch | Scope | Status |
@@ -18,7 +17,7 @@ Living document. Update it in the same PR that changes anything here.
 | 4b | `refactor/shared-data-pipeline` | in-memory corpus, batch sampling, seeding | merged |
 | 5 | `test/core-invariants` | real pytest suite | merged |
 | 6 | `refactor/package-layout` | installable `gptlm` package, lazy imports, stricter lint, checkpoint loading fixes | merged |
-| 7 | `feat/cli-config` | CLI entry points, `--double-dash` flags, `config.yaml` as the single source of defaults | planned |
+| 7 | `feat/cli-config` | CLI entry points, `--double-dash` flags, `config.yaml` as the single source of defaults | merged |
 | 8 | `docs/readme-accuracy` | README reconciliation | planned |
 
 Correctness before restructuring. Migrating broken code produces
@@ -233,13 +232,14 @@ Struck through = fixed.
   switching to `True` is safe.~~
 - ~~Checkpoint config omits `dropout`; `load_checkpoint` always rebuilds with
   the default 0.2.~~
-- `chat.py` has two divergent generation paths; the streaming path silently
-  drops `repetition_penalty` and reaches into `model._top_k_filtering`.
-- `config/config.yaml` is dead - nothing imports yaml. Values are
-  triplicated across the YAML, argparse defaults, and module constants.
+- ~~`chat.py` has two divergent generation paths; the streaming path silently
+  drops `repetition_penalty` and reaches into `model._top_k_filtering`.~~
+- ~~`config/config.yaml` is dead - nothing imports yaml. Values are
+  triplicated across the YAML, argparse defaults, and module constants.~~
 - ~~Seven scripts use `sys.path.append` instead of an installed package.~~
-- Five scripts are undocumented in the README.
-- Single-dash long flags (`-batch_size`) are non-standard; use `--batch-size`.
+- README documents the removed `scripts/` and single-dash flags; rewrite it around the `gptlm` subcommands (PR 8).
+- `GPTLanguageModel.__init__` still accepts an unused `device` argument.
+- ~~Single-dash long flags (`-batch_size`) are non-standard; use `--batch-size`.~~
 - `data/raw/wizard_of_oz.txt` is committed; should be a download script.
 
 ---
@@ -263,6 +263,10 @@ Struck through = fixed.
 | 2026-09 | `requirements.txt` installs `-e .[dev]` | Dependencies live in `pyproject.toml`; the setup command and CI stay unchanged |
 | 2026-09 | Checkpoints load with `weights_only=True` | Payload is tensors and primitives only; a crafted file cannot run code |
 | 2026-09 | CLI and config work split out of PR 6 | All seven scripts run at module level; converting them is a large change that deserves its own review |
+| 2026-09 | One `gptlm` command with subcommands | Conventional (git, docker, pip): one entry point, shared `--config`/`--device`, `python -m gptlm` fallback |
+| 2026-09 | Resume folded into `gptlm train --resume` | One training loop; the copy-pasted resume loop had drifted |
+| 2026-09 | `config.yaml` holds settings shared across commands; tool-only options default in argparse | One source for data, model, training, generation and paths without bloating the file |
+| 2026-09 | Status output to stderr, generated text to stdout | `gptlm chat --prompt` output can be piped |
 
 ---
 
