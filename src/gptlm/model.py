@@ -147,52 +147,49 @@ class GPTLanguageModel(nn.Module):
             loss = F.cross_entropy(logits, targets)
         return logits, loss
 
-    def generate(
+    @torch.no_grad()
+    def generate_stream(
         self, index, max_new_tokens, temperature=1.0, top_k=None, top_p=None, repetition_penalty=1.0
     ):
-        """Generate new tokens given a context with advanced sampling strategies
+        """Yield each new token as a (B, 1) tensor.
+
+        Order: repetition penalty, then either greedy argmax (temperature 0)
+        or temperature scaling, top-k, top-p and sampling. generate() is
+        built on this method, so streamed and collected output are identical
+        for the same random state.
 
         Args:
-            index: (B, T) tensor of indices in current context
+            index: (B, T) tensor of token ids for the context
             max_new_tokens: number of tokens to generate
-            temerapture: sampling temperature (higher = more random)
-                        0.0 greedy (argmax), 1.0 = normal, >1.0 = more random
-            top_k: if set, only sample from top k most likely tokens
-            top_p: if set, nucleus sampling - sample from smallest set with cumulative prob >= p
-            repetition_penalty: penalty for repeating tokens (>1.0 discourages repetition)
-
-        Returns:
-            (B, T+max_new_tokens) tensor of generated indices
+            temperature: 0.0 = greedy, 1.0 = unchanged, >1.0 = more random
+            top_k: if set, sample only from the k most likely tokens
+            top_p: if set, sample from the smallest set with cumulative probability >= p
+            repetition_penalty: >1.0 discourages tokens already in the sequence
         """
         for _ in range(max_new_tokens):
-            # crop context to block_size
-            index_cond = index[:, -self.block_size :]
-            # get the predictions
-            logits, loss = self.forward(index_cond)
-            # focus only on the last time step
-            logits = logits[:, -1, :]  # becomes (B,C)
-            # apply repetition penalty
+            logits, _ = self(index[:, -self.block_size :])
+            logits = logits[:, -1, :]  # (B, C)
             if repetition_penalty != 1.0:
                 logits = self._apply_repetition_penalty(logits, index, repetition_penalty)
-            # apply temperature
             if temperature == 0.0:
-                # greedy sampling (deterministic)
                 index_next = torch.argmax(logits, dim=-1, keepdim=True)
             else:
-                # scale logits by temperature
                 logits = logits / temperature
-                # apply top-k filtering
                 if top_k is not None:
                     logits = self._top_k_filtering(logits, top_k)
-                # apply top-p (nucleus) filtering
                 if top_p is not None:
                     logits = self._top_p_filtering(logits, top_p)
-                # apply softmax to get probabilities
-                probs = F.softmax(logits, dim=-1)  # (B,C)
-                # sample from the distribution
-                index_next = torch.multinomial(probs, num_samples=1)  # (B,1)
-            # append sampled index to the running sequence
-            index = torch.cat((index, index_next), dim=1)  # (B,T+1)
+                index_next = torch.multinomial(F.softmax(logits, dim=-1), num_samples=1)
+            index = torch.cat((index, index_next), dim=1)
+            yield index_next
+
+    def generate(self, index, max_new_tokens, **sampling):
+        """Return index extended by max_new_tokens tokens: (B, T + max_new_tokens).
+
+        Takes the same sampling arguments as generate_stream.
+        """
+        for index_next in self.generate_stream(index, max_new_tokens, **sampling):
+            index = torch.cat((index, index_next), dim=1)
         return index
 
     def _apply_repetition_penalty(self, logits, previous_tokens, penalty):
