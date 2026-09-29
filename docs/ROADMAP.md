@@ -6,7 +6,7 @@ Living document. Update it in the same PR that changes anything here.
 
 ## 1. Status
 
-**Phase:** hardening an existing prototype before restructuring.
+**Phase:** prototype cleanup (PRs 1-8) is done; next, the training recipe and data pipeline (PRs 9-11), then the milestones in section 8.
 
 | # | Branch | Scope | Status |
 |---|--------|-------|--------|
@@ -18,7 +18,10 @@ Living document. Update it in the same PR that changes anything here.
 | 5 | `test/core-invariants` | real pytest suite | merged |
 | 6 | `refactor/package-layout` | installable `gptlm` package, lazy imports, stricter lint, checkpoint loading fixes | merged |
 | 7 | `feat/cli-config` | CLI entry points, `--double-dash` flags, `config.yaml` as the single source of defaults | merged |
-| 8 | `docs/readme-accuracy` | README reconciliation | planned |
+| 8 | `docs/readme-accuracy` | README rewritten around `gptlm` subcommands; roadmap plans PRs 9-11 | merged |
+| 9 | `chore/ci-and-model-cleanup` | drop the model's unused `device` argument, CI `timeout-minutes`, CI annotation warnings | planned |
+| 10 | `feat/training-recipe` | pre-norm blocks, LR warmup + cosine schedule, gradient clipping, weight decay, bf16 autocast, `torch.compile` | planned |
+| 11 | `feat/token-dataset` | BPE tokenizer, uint16 memory-mapped token dataset | planned |
 
 Correctness before restructuring. Migrating broken code produces
 well-organized bugs.
@@ -125,8 +128,10 @@ differs between machines, `lm_head` shapes mismatch and token IDs shift -
 checkpoints silently become incompatible.
 
 Current baseline: 80 characters (81 minus a stripped UTF-8 BOM).
+`data/processed/vocab.txt` sha256:
+`33c40a23270e8737702e3acf89b1a1e0b0358ff447985ae7516f0013d3ea7bef`.
 
-Verify after any change to the corpus or to `prepare_data.py`:
+Verify after any change to the corpus or to `gptlm prepare`:
 
 ```bash
 sha256sum data/raw/wizard_of_oz.txt data/processed/vocab.txt
@@ -153,13 +158,14 @@ Body explaining WHY, not what. Wrap at 72.
 ```
 
 ### PRs
-One logical change each. Squash merge, delete branch. `git log main` should
+One logical change each. Squash merge a single-commit PR; rebase-merge a PR
+with several logical commits. Delete the branch. `git log main` should
 read as a changelog; a revert should undo a whole feature.
 
 ```bash
 git push -u origin <branch>
 gh pr create --fill
-gh pr merge --squash --delete-branch
+gh pr merge --squash --delete-branch   # --rebase for multi-commit PRs
 git checkout main && git pull origin main
 ```
 
@@ -206,8 +212,10 @@ Struck through = fixed.
 - ~~All `batch_size` sequence starts are drawn from a single ~2100-char
   window, so "32 independent samples" are overlapping slices of two
   paragraphs.
-- Post-norm blocks with no warmup, no LR schedule, no gradient clipping.
+- Post-norm blocks with no warmup, no LR schedule, no gradient clipping (PR 10).
   Survivable at 6 layers, not at 12. Prefer pre-norm.
+- `CorpusDataset` holds each split in memory as int64 token ids, 8 bytes per
+  character. Fine for one book, not for billions of tokens (PR 11).
 - ~~No seeding anywhere - runs are not reproducible.
 - ~~`n_embd % n_head` unchecked; bad values fail deep in the residual add.~~
 - ~~Tokenizer `encode` raises `KeyError` on any out-of-vocab character. Most
@@ -237,8 +245,10 @@ Struck through = fixed.
 - ~~`config/config.yaml` is dead - nothing imports yaml. Values are
   triplicated across the YAML, argparse defaults, and module constants.~~
 - ~~Seven scripts use `sys.path.append` instead of an installed package.~~
-- README documents the removed `scripts/` and single-dash flags; rewrite it around the `gptlm` subcommands (PR 8).
-- `GPTLanguageModel.__init__` still accepts an unused `device` argument.
+- ~~README documents the removed `scripts/` and single-dash flags; rewrite it around the `gptlm` subcommands (PR 8).~~
+- `GPTLanguageModel.__init__` still accepts an unused `device` argument (PR 9).
+- CI jobs have no `timeout-minutes`; a hung step runs until GitHub's 6-hour limit (PR 9).
+- The CI test job shows warning and notice annotations, likely deprecated action versions (PR 9).
 - ~~Single-dash long flags (`-batch_size`) are non-standard; use `--batch-size`.~~
 - `data/raw/wizard_of_oz.txt` is committed; should be a download script.
 
@@ -253,6 +263,8 @@ Struck through = fixed.
 | 2026-09 | `makedirs` in code over `.gitkeep` | `.gitignore` has a bare `logs/` rule that would ignore a `.gitkeep` |
 | 2026-09 | Correctness before restructuring | Restructuring touches every file; one clean diff set |
 | 2026-09 | Squash merge | Readable, revertable `main` history |
+| 2026-09 | Rebase-merge PRs with several logical commits | Each commit stays revertable on its own; squash remains the default for single-commit PRs |
+| 2026-09 | README points to `gptlm COMMAND --help` for the full flag list | Help text comes from the parser, so it cannot drift from the code |
 | 2026-09 | Tokenize corpus once into memory | ~5x faster per iteration; removes 200 full-file reads per eval |
 | 2026-09 | Sample batch starts across the whole corpus | Old sampler drew all starts from one ~2100-char window, so batches were correlated |
 | 2026-09 | `.pt` state_dict checkpoints over pickle | Survives refactors, loads cross-device, no arbitrary code execution |
@@ -276,12 +288,21 @@ Struck through = fixed.
 - ~~GitHub Actions: ruff + pytest on push and PR~~
 - ~~Pre-commit hooks~~
 - LICENSE, CONTRIBUTING.md, CHANGELOG.md
-- BPE tokenization to replace char-level
 - Larger corpus with a download script
-- Mixed precision and `torch.compile` on the 5080
 - Reframe "chatbot": a base LM trained on next-token prediction over one
   book is a text continuer, not a chat model. Instruction tuning is a
   separate, much larger effort.
+
+### Milestones (after PRs 9-11)
+1. TinyStories: coherent short stories from a small model.
+2. General web text: ~50-125M parameters on a few billion tokens.
+3. Chat fine-tuning: SFT with a chat template, loss on assistant turns only.
+
+### Cloud training (AWS)
+Worthwhile once a run would take the 5080 more than a day or two.
+Prerequisites: S3 for data and checkpoints, a Docker image, DDP multi-GPU
+training, experiment tracking, and cost guardrails (budgets, spot instances
+with checkpoint-based restarts).
 
 ---
 
