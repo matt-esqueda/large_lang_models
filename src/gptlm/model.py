@@ -92,9 +92,7 @@ class Block(nn.Module):
 class GPTLanguageModel(nn.Module):
     """GPT Language Model"""
 
-    def __init__(
-        self, vocab_size, n_embd=384, n_head=6, n_layer=6, block_size=64, dropout=0.2, device='cuda'
-    ):
+    def __init__(self, vocab_size, n_embd=384, n_head=6, n_layer=6, block_size=64, dropout=0.2):
         super().__init__()
         self.block_size = block_size
         self.config = {
