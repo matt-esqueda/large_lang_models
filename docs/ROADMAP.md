@@ -19,7 +19,7 @@ Living document. Update it in the same PR that changes anything here.
 | 6 | `refactor/package-layout` | installable `gptlm` package, lazy imports, stricter lint, checkpoint loading fixes | merged |
 | 7 | `feat/cli-config` | CLI entry points, `--double-dash` flags, `config.yaml` as the single source of defaults | merged |
 | 8 | `docs/readme-accuracy` | README rewritten around `gptlm` subcommands; roadmap plans PRs 9-11 | merged |
-| 9 | `chore/ci-and-model-cleanup` | drop the model's unused `device` argument, CI `timeout-minutes`, CI annotation warnings | planned |
+| 9 | `chore/ci-and-model-cleanup` | drop the model's unused `device` argument; CI on Node 24 action majors, pinned `ubuntu-24.04`, job timeouts; `ruff-check` hook id | merged |
 | 10 | `feat/training-recipe` | pre-norm blocks, LR warmup + cosine schedule, gradient clipping, weight decay, bf16 autocast, `torch.compile` | planned |
 | 11 | `feat/token-dataset` | BPE tokenizer, uint16 memory-mapped token dataset | planned |
 
@@ -246,9 +246,9 @@ Struck through = fixed.
   triplicated across the YAML, argparse defaults, and module constants.~~
 - ~~Seven scripts use `sys.path.append` instead of an installed package.~~
 - ~~README documents the removed `scripts/` and single-dash flags; rewrite it around the `gptlm` subcommands (PR 8).~~
-- `GPTLanguageModel.__init__` still accepts an unused `device` argument (PR 9).
-- CI jobs have no `timeout-minutes`; a hung step runs until GitHub's 6-hour limit (PR 9).
-- The CI test job shows warning and notice annotations, likely deprecated action versions (PR 9).
+- ~~`GPTLanguageModel.__init__` still accepts an unused `device` argument (PR 9).~~
+- ~~CI jobs have no `timeout-minutes`; a hung step runs until GitHub's 6-hour limit (PR 9).~~
+- ~~CI jobs warn that `actions/checkout@v4` and `actions/setup-python@v5` run on deprecated Node 20, and that `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19 (PR 9).~~
 - ~~Single-dash long flags (`-batch_size`) are non-standard; use `--batch-size`.~~
 - `data/raw/wizard_of_oz.txt` is committed; should be a download script.
 
@@ -265,6 +265,7 @@ Struck through = fixed.
 | 2026-09 | Squash merge | Readable, revertable `main` history |
 | 2026-09 | Rebase-merge PRs with several logical commits | Each commit stays revertable on its own; squash remains the default for single-commit PRs |
 | 2026-09 | README points to `gptlm COMMAND --help` for the full flag list | Help text comes from the parser, so it cannot drift from the code |
+| 2026-09 | CI runs on `ubuntu-24.04`, not `ubuntu-latest` | A runner image change cannot break CI unannounced; moving to a newer image is a deliberate one-line change |
 | 2026-09 | Tokenize corpus once into memory | ~5x faster per iteration; removes 200 full-file reads per eval |
 | 2026-09 | Sample batch starts across the whole corpus | Old sampler drew all starts from one ~2100-char window, so batches were correlated |
 | 2026-09 | `.pt` state_dict checkpoints over pickle | Survives refactors, loads cross-device, no arbitrary code execution |
