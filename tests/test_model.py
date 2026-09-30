@@ -58,6 +58,12 @@ def test_rejects_n_embd_not_divisible_by_n_head(tokenizer):
         GPTLanguageModel(vocab_size=tokenizer.vocab_size, n_embd=30, n_head=4)
 
 
+def test_constructor_has_no_device_argument(tokenizer):
+    """Placement is .to(device); a constructor device argument was dead code."""
+    with pytest.raises(TypeError, match="device"):
+        GPTLanguageModel(vocab_size=tokenizer.vocab_size, device="cpu")
+
+
 @pytest.mark.parametrize("name", ["token_embedding_table", "position_embedding_table", "lm_head"])
 def test_init_std_is_0_02(make_model, name):
     weight = getattr(make_model(n_embd=64), name).weight
