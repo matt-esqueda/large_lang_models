@@ -1,5 +1,6 @@
 """`gptlm train`: train a new model, or continue one from a checkpoint."""
 
+import argparse
 import os
 from datetime import datetime
 
@@ -18,6 +19,7 @@ TRAINING_KEYS = [
     "min_lr",
     "grad_clip",
     "precision",
+    "compile",
     "eval_iters",
     "eval_interval",
     "checkpoint_interval",
@@ -48,6 +50,12 @@ def add_arguments(parser):
     training.add_argument("--grad-clip", type=float, help="clip the global gradient norm to this")
     training.add_argument(
         "--precision", choices=["auto", "bf16", "fp32"], help="auto = bf16 on CUDA, fp32 on CPU"
+    )
+    training.add_argument(
+        "--compile",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="torch.compile the model (needs a C++ compiler on CPU)",
     )
     training.add_argument(
         "--weight-decay",
@@ -146,6 +154,10 @@ def run(args, config):
         # TF32 for the fp32 matmuls autocast leaves alone (and all of them under fp32).
         torch.set_float32_matmul_precision("high")
     print(f"Precision: {'bf16 autocast' if precision == 'bf16' else 'fp32'}")
+    forward = None
+    if settings["compile"]:
+        print("Compiling the model; the first steps will be slow")
+        forward = torch.compile(model)
 
     optimizer = configure_optimizer(model, settings["learning_rate"], settings["weight_decay"])
     if meta is not None:
@@ -181,6 +193,7 @@ def run(args, config):
         schedule=schedule,
         grad_clip=settings["grad_clip"],
         precision=precision,
+        forward=forward,
         start_iter=start_iter,
         num_iters=settings["max_iters"],
         batch_size=settings["batch_size"],

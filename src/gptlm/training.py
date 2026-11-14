@@ -157,6 +157,7 @@ def train(
     schedule,
     grad_clip,
     precision="fp32",
+    forward=None,
     start_iter,
     num_iters,
     batch_size,
@@ -178,9 +179,13 @@ def train(
     every step and is saved in each checkpoint, so a resume continues it.
     precision ("bf16" or "fp32", from resolve_precision) applies to every
     forward pass; backward runs outside autocast.
+    forward, if given, replaces model for forward passes: a torch.compile'd
+    model shares model's parameters, but checkpoints are saved from model
+    so their keys carry no compile wrapper prefix.
 
     Returns (final_losses, final_checkpoint_path).
     """
+    forward = model if forward is None else forward
     end_iter = start_iter + num_iters
     start_time = time.time()
     model.train()
@@ -195,7 +200,7 @@ def train(
         losses = None
 
         if step == 0 or iteration % eval_interval == 0 or step == num_iters - 1:
-            losses = estimate_loss(model, dataset, batch_size, eval_iters, precision)
+            losses = estimate_loss(forward, dataset, batch_size, eval_iters, precision)
             elapsed = time.time() - start_time
             rate = (step + 1) / elapsed if elapsed > 0 else 0
             eta = (num_iters - step - 1) / rate if rate > 0 else 0
@@ -208,7 +213,7 @@ def train(
 
         if step > 0 and iteration % checkpoint_interval == 0:
             if losses is None:
-                losses = estimate_loss(model, dataset, batch_size, eval_iters, precision)
+                losses = estimate_loss(forward, dataset, batch_size, eval_iters, precision)
             path = os.path.join(checkpoint_dir, f"model_iter{iteration}.pt")
             print(f"  Saving checkpoint: {path}")
             save_checkpoint(
@@ -223,10 +228,10 @@ def train(
 
         x, y = dataset.get_batch("train", batch_size, model.block_size)
         with autocast_context(precision, x.device.type):
-            _, loss = model(x, y)
+            _, loss = forward(x, y)
         grad_norm = optimizer_step(model, optimizer, loss, grad_clip)
 
-    losses = estimate_loss(model, dataset, batch_size, eval_iters, precision)
+    losses = estimate_loss(forward, dataset, batch_size, eval_iters, precision)
     total = time.time() - start_time
     final_path = os.path.join(checkpoint_dir, final_name)
     save_checkpoint(

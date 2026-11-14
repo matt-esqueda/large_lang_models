@@ -259,3 +259,42 @@ def test_bf16_training_on_cuda_saves_fp32_weights(workspace):
     model, meta = load_checkpoint(str(root / "ckpt" / "model_final.pt"), device="cpu")
     assert all(p.dtype == torch.float32 for p in model.parameters())
     assert torch.isfinite(torch.tensor(meta["val_loss"]))
+
+
+def test_compile_trains_through_the_compiled_module(workspace, monkeypatch):
+    """Forward passes use the compiled module; checkpoints save the plain one.
+
+    The stand-in mimics torch.compile's wrapper, which stores the model as
+    _orig_mod, so saving the wrapper would prefix every state_dict key.
+    """
+    calls = []
+
+    class FakeCompiled(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            self._orig_mod = model
+            self.block_size = model.block_size  # the real wrapper forwards attributes
+
+        def __len__(self):  # like the real wrapper, so `if compiled:` fails loudly
+            raise TypeError("compiled modules do not support len()")
+
+        def forward(self, *args):
+            calls.append(1)
+            return self._orig_mod(*args)
+
+    monkeypatch.setattr(torch, "compile", FakeCompiled)
+    root, config_file = workspace
+    run_train(config_file, "--compile")
+    assert calls
+    payload = torch.load(str(root / "ckpt" / "model_final.pt"), weights_only=True)
+    assert not any(k.startswith("_orig_mod.") for k in payload["model_state"])
+    load_checkpoint(str(root / "ckpt" / "model_final.pt"), device="cpu")
+
+
+def test_compile_is_off_by_default(workspace, monkeypatch):
+    def refuse(model):
+        raise AssertionError("torch.compile called without --compile")
+
+    monkeypatch.setattr(torch, "compile", refuse)
+    _, config_file = workspace
+    assert run_train(config_file, "--max-iters", "1") == 0
