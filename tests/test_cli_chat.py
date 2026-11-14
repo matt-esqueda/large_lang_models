@@ -8,7 +8,9 @@ import yaml
 
 from gptlm.checkpoint import save_checkpoint
 from gptlm.cli import main
+from gptlm.cli.chat import text_pieces
 from gptlm.config import load_config
+from gptlm.tokenizer import GPT2Tokenizer
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
 MAX_NEW = 20
@@ -122,3 +124,17 @@ def test_checkpoint_without_tokenizer_fails(chat_config, make_model, tmp_path):
     save_checkpoint(path, make_model())
     with pytest.raises(SystemExit, match="records no tokenizer"):
         run_chat(chat_config, "--checkpoint", path, "--prompt", "the ")
+
+
+@pytest.mark.parametrize("text", ["😀 ok", "café ½", "plain"])
+def test_text_pieces_join_split_characters(text):
+    """GPT-2 splits most emoji across two tokens; each piece must be whole characters."""
+    gpt2 = GPT2Tokenizer()
+    pieces = list(text_pieces(gpt2, gpt2.encode(text)))
+    assert "".join(pieces) == text
+    assert not any("\ufffd" in piece for piece in pieces)
+
+
+def test_text_pieces_char_tokenizer_is_one_piece_per_token(tokenizer):
+    ids = tokenizer.encode("the end")
+    assert list(text_pieces(tokenizer, ids)) == list("the end")

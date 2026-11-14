@@ -50,12 +50,31 @@ def validate(settings):
         fail("--repetition-penalty must be > 0")
 
 
+def text_pieces(tokenizer, token_ids):
+    """Yield the text of a token stream as soon as it forms whole characters.
+
+    A GPT-2 token can end partway through a multi-byte UTF-8 character
+    (most emoji span two tokens), so decoding token by token would print
+    replacement characters. Bytes are buffered until a character completes.
+    """
+    import codecs
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    for token_id in token_ids:
+        piece = decoder.decode(tokenizer.decode_bytes([token_id]))
+        if piece:
+            yield piece
+    tail = decoder.decode(b"", final=True)
+    if tail:
+        yield tail
+
+
 def complete(model, tokenizer, prompt, settings, device, on_text=None):
     """Return prompt followed by its generated continuation.
 
     Streaming and non-streaming output both come from this one path. If
-    on_text is given, it receives the prompt and then each new character
-    as it is produced. Raises ValueError, before any output, if the prompt
+    on_text is given, it receives the prompt and then each new piece of
+    text as soon as it forms whole characters. Raises ValueError, before any output, if the prompt
     contains characters outside the vocabulary.
     """
     import torch
@@ -63,16 +82,16 @@ def complete(model, tokenizer, prompt, settings, device, on_text=None):
     context = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long, device=device)
     if on_text is not None:
         on_text(prompt)
-    pieces = []
-    for index_next in model.generate_stream(
+    stream = model.generate_stream(
         context,
         settings["max_new_tokens"],
         temperature=settings["temperature"],
         top_k=settings["top_k"],
         top_p=settings["top_p"],
         repetition_penalty=settings["repetition_penalty"],
-    ):
-        piece = tokenizer.decode(index_next[0].tolist())
+    )
+    pieces = []
+    for piece in text_pieces(tokenizer, (index_next[0, 0].item() for index_next in stream)):
         pieces.append(piece)
         if on_text is not None:
             on_text(piece)
