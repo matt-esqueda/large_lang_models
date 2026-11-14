@@ -12,24 +12,32 @@ TRAINING_KEYS = [
     "batch_size",
     "max_iters",
     "learning_rate",
+    "weight_decay",
     "eval_iters",
     "eval_interval",
     "checkpoint_interval",
     "seed",
 ]
 MODEL_KEYS = ["n_embd", "n_head", "n_layer", "block_size", "dropout"]
+# Training settings that a resumed run takes from the checkpoint, like the model's.
+CHECKPOINT_TRAINING_KEYS = ["weight_decay"]
 
 
 def add_arguments(parser):
     parser.add_argument(
         "--resume",
         metavar="CHECKPOINT",
-        help="continue from this checkpoint file; model settings come from it",
+        help="continue from this checkpoint file; model settings and weight decay come from it",
     )
     training = parser.add_argument_group("training", "defaults: the config's training section")
     training.add_argument("--batch-size", type=int)
     training.add_argument("--max-iters", type=int, help="optimizer steps to run this invocation")
     training.add_argument("--learning-rate", type=float)
+    training.add_argument(
+        "--weight-decay",
+        type=float,
+        help="AdamW decay on matrix weights; not allowed with --resume",
+    )
     training.add_argument("--eval-iters", type=int, help="batches averaged per loss estimate")
     training.add_argument("--eval-interval", type=int, help="estimate loss every N iterations")
     training.add_argument(
@@ -63,9 +71,10 @@ def run(args, config):
     from gptlm.data import CorpusDataset, set_seed
     from gptlm.model import GPTLanguageModel
     from gptlm.tokenizer import CharacterTokenizer
-    from gptlm.training import MetricsLog, train
+    from gptlm.training import MetricsLog, configure_optimizer, train
 
-    settings = section(config, "training", overrides(args, TRAINING_KEYS))
+    training_flags = overrides(args, TRAINING_KEYS)
+    settings = section(config, "training", training_flags)
     model_flags = overrides(args, MODEL_KEYS)
     data = section(config, "data")
     paths = section(config, "paths")
@@ -76,11 +85,12 @@ def run(args, config):
         set_seed(settings["seed"])
 
     if args.resume:
-        given = [f"--{k.replace('_', '-')}" for k, v in model_flags.items() if v is not None]
+        fixed = {**model_flags, **{k: training_flags[k] for k in CHECKPOINT_TRAINING_KEYS}}
+        given = [f"--{k.replace('_', '-')}" for k, v in fixed.items() if v is not None]
         if given:
             fail(
                 f"{', '.join(given)} cannot be used with --resume; "
-                "model settings come from the checkpoint"
+                "these settings come from the checkpoint"
             )
         if not os.path.isfile(args.resume):
             fail(f"checkpoint not found: {args.resume}")
@@ -102,7 +112,7 @@ def run(args, config):
     if device == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=settings["learning_rate"])
+    optimizer = configure_optimizer(model, settings["learning_rate"], settings["weight_decay"])
     if meta is not None:
         if meta["optimizer_state"] is None:
             print("Warning: checkpoint has no optimizer state; starting a fresh optimizer")

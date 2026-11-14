@@ -19,6 +19,21 @@ METRICS_FIELDS = [
 ]
 
 
+def configure_optimizer(model, learning_rate, weight_decay):
+    """AdamW with weight decay on matrix weights only.
+
+    Linear and embedding weights (2-D) are decayed. Biases and LayerNorm
+    parameters (1-D) are not: decaying them pulls offsets and scales toward
+    zero without regularizing anything.
+    """
+    params = [p for p in model.parameters() if p.requires_grad]
+    groups = [
+        {"params": [p for p in params if p.dim() >= 2], "weight_decay": weight_decay},
+        {"params": [p for p in params if p.dim() < 2], "weight_decay": 0.0},
+    ]
+    return torch.optim.AdamW(groups, lr=learning_rate)
+
+
 @torch.no_grad()
 def estimate_loss(model, dataset, batch_size, eval_iters):
     """Mean loss over eval_iters batches of each split, measured in eval mode."""

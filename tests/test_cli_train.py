@@ -136,3 +136,22 @@ def test_seeded_runs_are_identical(workspace):
     second, _ = load_checkpoint(final, device="cpu")
     for name, tensor in first.state_dict().items():
         assert torch.equal(tensor, second.state_dict()[name]), name
+
+
+def test_resume_rejects_weight_decay_flag(workspace):
+    root, config_file = workspace
+    run_train(config_file, "--max-iters", "1")
+    with pytest.raises(SystemExit, match="--weight-decay cannot be used with --resume"):
+        run_train(
+            config_file, "--resume", str(root / "ckpt" / "model_final.pt"), "--weight-decay", "0"
+        )
+
+
+def test_resume_keeps_weight_decay_from_checkpoint(workspace):
+    root, config_file = workspace
+    run_train(config_file, "--max-iters", "1", "--weight-decay", "0.05")
+    run_train(config_file, "--resume", str(root / "ckpt" / "model_final.pt"), "--max-iters", "1")
+    _, meta = load_checkpoint(str(root / "ckpt" / "model_iter2.pt"), device="cpu")
+    decay, no_decay = meta["optimizer_state"]["param_groups"]
+    assert decay["weight_decay"] == 0.05
+    assert no_decay["weight_decay"] == 0.0
