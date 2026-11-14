@@ -8,7 +8,7 @@ import yaml
 
 from gptlm.checkpoint import save_checkpoint
 from gptlm.cli import main
-from gptlm.cli.chat import text_pieces
+from gptlm.cli.chat import complete, text_pieces
 from gptlm.config import load_config
 from gptlm.tokenizer import GPT2Tokenizer
 
@@ -138,3 +138,36 @@ def test_text_pieces_join_split_characters(text):
 def test_text_pieces_char_tokenizer_is_one_piece_per_token(tokenizer):
     ids = tokenizer.encode("the end")
     assert list(text_pieces(tokenizer, ids)) == list("the end")
+
+
+def test_text_pieces_stop_at_end_of_text():
+    gpt2 = GPT2Tokenizer()
+    ids = [*gpt2.encode("The end."), gpt2.eot_token, *gpt2.encode(" Once upon")]
+    assert "".join(text_pieces(gpt2, ids)) == "The end."
+
+
+class ScriptedModel:
+    """Stands in for GPT: generate_stream yields fixed tokens and counts them."""
+
+    def __init__(self, token_ids):
+        self.token_ids = token_ids
+        self.generated = 0
+
+    def generate_stream(self, context, max_new_tokens, **sampling):
+        for token_id in self.token_ids[:max_new_tokens]:
+            self.generated += 1
+            yield torch.tensor([[token_id]])
+
+
+def test_complete_stops_generating_at_end_of_text():
+    gpt2 = GPT2Tokenizer()
+    model = ScriptedModel([*gpt2.encode(" the end."), gpt2.eot_token, *gpt2.encode(" more")])
+    settings = {
+        "max_new_tokens": 50,
+        "temperature": 0.0,
+        "top_k": None,
+        "top_p": None,
+        "repetition_penalty": 1.0,
+    }
+    assert complete(model, gpt2, "It was", settings, "cpu") == "It was the end."
+    assert model.generated == len(gpt2.encode(" the end.")) + 1

@@ -56,11 +56,17 @@ def text_pieces(tokenizer, token_ids):
     A GPT-2 token can end partway through a multi-byte UTF-8 character
     (most emoji span two tokens), so decoding token by token would print
     replacement characters. Bytes are buffered until a character completes.
+
+    The stream ends at the tokenizer's end-of-text token, which is never
+    printed: the model has finished the document. Stopping here also stops
+    generation, since token_ids is consumed lazily.
     """
     import codecs
 
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     for token_id in token_ids:
+        if token_id == tokenizer.eot_token:
+            break
         piece = decoder.decode(tokenizer.decode_bytes([token_id]))
         if piece:
             yield piece
@@ -74,8 +80,9 @@ def complete(model, tokenizer, prompt, settings, device, on_text=None):
 
     Streaming and non-streaming output both come from this one path. If
     on_text is given, it receives the prompt and then each new piece of
-    text as soon as it forms whole characters. Raises ValueError, before any output, if the prompt
-    contains characters outside the vocabulary.
+    text as soon as it forms whole characters. Generation stops early if the
+    model emits the end-of-text token. Raises ValueError, before any output,
+    if the prompt contains characters outside the vocabulary.
     """
     import torch
 
