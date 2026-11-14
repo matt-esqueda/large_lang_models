@@ -47,6 +47,11 @@ jobs:
         run: gptlm compare models/checkpoints/model_iter5.pt models/checkpoints/model_final.pt --prompt Dorothy --max-new-tokens 20 --seed 0
       - name: Plot metrics
         run: gptlm plot
+      - name: GPT-2 tokenizer end to end
+        run: |
+          gptlm prepare --tokenizer gpt2
+          gptlm train --batch-size 8 --max-iters 4 --eval-iters 2 --eval-interval 2 --checkpoint-interval 2 --block-size 16 --n-layer 1 --n-head 2 --n-embd 32
+          gptlm chat --prompt "Dorothy 😀" --max-new-tokens 10
 
   test:
     timeout-minutes: 15
