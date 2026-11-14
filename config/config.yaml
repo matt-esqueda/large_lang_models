@@ -32,6 +32,7 @@ training:
   min_lr: 3.0e-5             # learning rate at and after lr_decay_iters
   grad_clip: 1.0             # clip the global gradient norm to this; null disables
   precision: auto            # auto | bf16 | fp32; auto = bf16 autocast on CUDA, fp32 on CPU
+  compile: false             # torch.compile the model; slow first steps, faster after
   eval_iters: 100            # batches averaged per loss estimate
   eval_interval: 500         # estimate loss every N iterations
   checkpoint_interval: 500   # save a checkpoint every N iterations
