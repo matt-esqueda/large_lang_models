@@ -10,49 +10,32 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 
-class Head(nn.Module):
-    """One head of self-attention"""
+class CausalSelfAttention(nn.Module):
+    """Multi-head causal self-attention.
 
-    def __init__(self, head_size, n_embed, block_size, dropout):
+    One linear layer projects queries, keys and values for every head at
+    once, and F.scaled_dot_product_attention applies the causal mask,
+    softmax and dropout in a single fused kernel.
+    """
+
+    def __init__(self, n_embd, n_head, dropout):
         super().__init__()
-        self.key = nn.Linear(n_embed, head_size, bias=False)
-        self.query = nn.Linear(n_embed, head_size, bias=False)
-        self.value = nn.Linear(n_embed, head_size, bias=False)
-        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-        self.dropout = nn.Dropout(dropout)
+        self.n_head = n_head
+        self.qkv = nn.Linear(n_embd, 3 * n_embd, bias=False)
+        self.proj = nn.Linear(n_embd, n_embd)
+        self.attn_dropout = dropout
+        self.resid_dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        # input of size (batch, time-step, channels)
-        # output of size (batch, time-step, head_size)
         B, T, C = x.shape
-        k = self.key(x)  # (B,T,hs)
-        q = self.query(x)  # (B,T,hs)
-        # compute attentions scores ('affinities')
-        wei = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5  # (B,T,hs) @ (B,hs,T) -> (B,T,T)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))  # (B,T,T)
-        wei = F.softmax(wei, dim=-1)  # (B,T,T)
-        wei = self.dropout(wei)
-        # perform the weighted aggregation of the values
-        v = self.value(x)  # (B,T,hs)
-        out = wei @ v  # (B,T,T) @ (B,T,hs) -> (,B,T,hs)
-        return out
-
-
-class MultiHeadAttention(nn.Module):
-    """Multiple head of self-attention in parallel"""
-
-    def __init__(self, num_heads, head_size, n_embd, block_size, dropout):
-        super().__init__()
-        self.heads = nn.ModuleList(
-            [Head(head_size, n_embd, block_size, dropout) for _ in range(num_heads)]
+        q, k, v = self.qkv(x).split(C, dim=2)
+        # (B, T, C) -> (B, n_head, T, head_size)
+        q, k, v = (t.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) for t in (q, k, v))
+        y = F.scaled_dot_product_attention(
+            q, k, v, dropout_p=self.attn_dropout if self.training else 0.0, is_causal=True
         )
-        self.proj = nn.Linear(head_size * num_heads, n_embd)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x):
-        out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.dropout(self.proj(out))
-        return out
+        y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble the heads
+        return self.resid_dropout(self.proj(y))
 
 
 class FeedForward(nn.Module):
@@ -74,11 +57,9 @@ class FeedForward(nn.Module):
 class Block(nn.Module):
     """Pre-norm transformer block: x + attn(ln1(x)), then x + ffwd(ln2(x))."""
 
-    def __init__(self, n_embd, n_head, block_size, dropout):
-        # n_embd: embedding dimension, n_head,: the number of head we'd like
+    def __init__(self, n_embd, n_head, dropout):
         super().__init__()
-        head_size = n_embd // n_head
-        self.sa = MultiHeadAttention(n_head, head_size, n_embd, block_size, dropout)
+        self.sa = CausalSelfAttention(n_embd, n_head, dropout)
         self.ffwd = FeedForward(n_embd, dropout)
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
@@ -109,9 +90,7 @@ class GPTLanguageModel(nn.Module):
 
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.blocks = nn.Sequential(
-            *[Block(n_embd, n_head, block_size, dropout) for _ in range(n_layer)]
-        )
+        self.blocks = nn.Sequential(*[Block(n_embd, n_head, dropout) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd)  # final layer norm
         self.lm_head = nn.Linear(n_embd, vocab_size)
 

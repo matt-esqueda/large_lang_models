@@ -14,7 +14,7 @@ import torch
 
 # Bump whenever saved weights stop meaning the same thing; load_checkpoint
 # refuses every other version.
-# 2: pre-norm blocks (PR 10).
+# 2: pre-norm blocks and fused attention (PR 10).
 CHECKPOINT_VERSION = 2
 
 
