@@ -17,6 +17,7 @@ TRAINING_KEYS = [
     "lr_decay_iters",
     "min_lr",
     "grad_clip",
+    "precision",
     "eval_iters",
     "eval_interval",
     "checkpoint_interval",
@@ -45,6 +46,9 @@ def add_arguments(parser):
     )
     training.add_argument("--min-lr", type=float, help="learning rate after the decay")
     training.add_argument("--grad-clip", type=float, help="clip the global gradient norm to this")
+    training.add_argument(
+        "--precision", choices=["auto", "bf16", "fp32"], help="auto = bf16 on CUDA, fp32 on CPU"
+    )
     training.add_argument(
         "--weight-decay",
         type=float,
@@ -83,7 +87,7 @@ def run(args, config):
     from gptlm.data import CorpusDataset, set_seed
     from gptlm.model import GPTLanguageModel
     from gptlm.tokenizer import CharacterTokenizer
-    from gptlm.training import MetricsLog, configure_optimizer, train
+    from gptlm.training import MetricsLog, configure_optimizer, resolve_precision, train
 
     training_flags = overrides(args, TRAINING_KEYS)
     settings = section(config, "training", training_flags)
@@ -93,6 +97,10 @@ def run(args, config):
     device = resolve_device(config, args.device)
     if settings["grad_clip"] is not None and settings["grad_clip"] <= 0:
         fail("grad_clip must be positive, or null in the config to disable clipping")
+    try:
+        precision = resolve_precision(settings["precision"], device)
+    except ValueError as e:
+        fail(str(e))
 
     tokenizer = CharacterTokenizer(data["vocab_file"])
     if settings["seed"] is not None:
@@ -135,6 +143,9 @@ def run(args, config):
     print(f"Using device: {device}")
     if device == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
+        # TF32 for the fp32 matmuls autocast leaves alone (and all of them under fp32).
+        torch.set_float32_matmul_precision("high")
+    print(f"Precision: {'bf16 autocast' if precision == 'bf16' else 'fp32'}")
 
     optimizer = configure_optimizer(model, settings["learning_rate"], settings["weight_decay"])
     if meta is not None:
@@ -169,6 +180,7 @@ def run(args, config):
         dataset,
         schedule=schedule,
         grad_clip=settings["grad_clip"],
+        precision=precision,
         start_iter=start_iter,
         num_iters=settings["max_iters"],
         batch_size=settings["batch_size"],

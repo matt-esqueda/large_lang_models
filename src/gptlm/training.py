@@ -1,5 +1,6 @@
 """Training loop shared by fresh runs and resumes."""
 
+import contextlib
 import csv
 import math
 import os
@@ -51,6 +52,36 @@ def lr_at(iteration, *, learning_rate, min_lr, warmup_iters, lr_decay_iters):
     return min_lr + 0.5 * (1.0 + math.cos(math.pi * progress)) * (learning_rate - min_lr)
 
 
+PRECISIONS = ("auto", "bf16", "fp32")
+
+
+def resolve_precision(precision, device):
+    """Map the precision setting to "bf16" or "fp32" for a device.
+
+    auto means bf16 autocast on a CUDA GPU that supports it and fp32
+    everywhere else. bf16 keeps fp32's exponent range, so unlike fp16 it
+    needs no loss scaling.
+    """
+    if precision not in PRECISIONS:
+        raise ValueError(f"precision must be one of {', '.join(PRECISIONS)}, not {precision!r}")
+    if precision == "auto":
+        return "bf16" if device == "cuda" and torch.cuda.is_bf16_supported() else "fp32"
+    if precision == "bf16" and device != "cuda":
+        raise ValueError("precision bf16 needs a CUDA device; use fp32 or auto")
+    return precision
+
+
+def autocast_context(precision, device_type):
+    """Context for forward passes: bf16 autocast, or a no-op for fp32.
+
+    Weights, gradients and optimizer state stay fp32 either way; autocast
+    only runs matmuls and attention in bf16.
+    """
+    if precision == "bf16":
+        return torch.autocast(device_type=device_type, dtype=torch.bfloat16)
+    return contextlib.nullcontext()
+
+
 def optimizer_step(model, optimizer, loss, grad_clip):
     """Backpropagate loss, clip the global gradient norm to grad_clip, and step.
 
@@ -65,7 +96,7 @@ def optimizer_step(model, optimizer, loss, grad_clip):
 
 
 @torch.no_grad()
-def estimate_loss(model, dataset, batch_size, eval_iters):
+def estimate_loss(model, dataset, batch_size, eval_iters, precision="fp32"):
     """Mean loss over eval_iters batches of each split, measured in eval mode."""
     was_training = model.training
     model.eval()
@@ -74,7 +105,8 @@ def estimate_loss(model, dataset, batch_size, eval_iters):
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             x, y = dataset.get_batch(split, batch_size, model.block_size)
-            _, loss = model(x, y)
+            with autocast_context(precision, x.device.type):
+                _, loss = model(x, y)
             losses[k] = loss.item()
         out[split] = losses.mean().item()
     model.train(was_training)
@@ -124,6 +156,7 @@ def train(
     *,
     schedule,
     grad_clip,
+    precision="fp32",
     start_iter,
     num_iters,
     batch_size,
@@ -143,6 +176,8 @@ def train(
 
     schedule holds lr_at's keyword arguments. It sets the learning rate at
     every step and is saved in each checkpoint, so a resume continues it.
+    precision ("bf16" or "fp32", from resolve_precision) applies to every
+    forward pass; backward runs outside autocast.
 
     Returns (final_losses, final_checkpoint_path).
     """
@@ -160,7 +195,7 @@ def train(
         losses = None
 
         if step == 0 or iteration % eval_interval == 0 or step == num_iters - 1:
-            losses = estimate_loss(model, dataset, batch_size, eval_iters)
+            losses = estimate_loss(model, dataset, batch_size, eval_iters, precision)
             elapsed = time.time() - start_time
             rate = (step + 1) / elapsed if elapsed > 0 else 0
             eta = (num_iters - step - 1) / rate if rate > 0 else 0
@@ -173,7 +208,7 @@ def train(
 
         if step > 0 and iteration % checkpoint_interval == 0:
             if losses is None:
-                losses = estimate_loss(model, dataset, batch_size, eval_iters)
+                losses = estimate_loss(model, dataset, batch_size, eval_iters, precision)
             path = os.path.join(checkpoint_dir, f"model_iter{iteration}.pt")
             print(f"  Saving checkpoint: {path}")
             save_checkpoint(
@@ -187,10 +222,11 @@ def train(
             )
 
         x, y = dataset.get_batch("train", batch_size, model.block_size)
-        _, loss = model(x, y)
+        with autocast_context(precision, x.device.type):
+            _, loss = model(x, y)
         grad_norm = optimizer_step(model, optimizer, loss, grad_clip)
 
-    losses = estimate_loss(model, dataset, batch_size, eval_iters)
+    losses = estimate_loss(model, dataset, batch_size, eval_iters, precision)
     total = time.time() - start_time
     final_path = os.path.join(checkpoint_dir, final_name)
     save_checkpoint(

@@ -49,3 +49,11 @@ def make_model(tokenizer):
         return model.eval()
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def restore_matmul_precision():
+    """`gptlm train` on CUDA enables TF32 process-wide; keep it out of later tests."""
+    before = torch.get_float32_matmul_precision()
+    yield
+    torch.set_float32_matmul_precision(before)
