@@ -80,3 +80,38 @@ def test_gpu_built_model_runs_on_cpu(make_model, tokenizer):
         model = model.to("cpu")
         cpu_logits, _ = model(x)
     torch.testing.assert_close(cpu_logits, gpu_logits.cpu(), atol=1e-4, rtol=1e-4)
+
+
+def test_block_is_pre_norm(make_model):
+    """With both residual branches zeroed, a pre-norm block is the identity.
+
+    A post-norm block would still pass its output through LayerNorm.
+    """
+    block = make_model().blocks[0]
+    with torch.no_grad():
+        for linear in (block.sa.proj, block.ffwd.net[2]):
+            linear.weight.zero_()
+            linear.bias.zero_()
+        g = torch.Generator().manual_seed(0)
+        x = torch.randn(B, T, block.ln1.normalized_shape[0], generator=g) * 3 + 1
+        torch.testing.assert_close(block(x), x)
+
+
+N_LAYER = 4
+SCALED_STD = 0.02 / (2 * N_LAYER) ** 0.5
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("sa.proj.weight", SCALED_STD),
+        ("ffwd.net.2.weight", SCALED_STD),
+        ("ffwd.net.0.weight", 0.02),
+    ],
+)
+def test_residual_projections_use_scaled_init(make_model, name, expected):
+    """GPT-2 init: only projections into the residual stream are scaled down."""
+    model = make_model(n_embd=64, n_layer=N_LAYER)
+    for i, block in enumerate(model.blocks):
+        std = block.get_parameter(name).std().item()
+        assert abs(std - expected) < 0.15 * expected, (i, std)

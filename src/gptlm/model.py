@@ -3,6 +3,8 @@ GPT Language Model Architecture
 Shared model components for training and inference.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -70,7 +72,7 @@ class FeedForward(nn.Module):
 
 
 class Block(nn.Module):
-    """Transformer block: communication followed by computation"""
+    """Pre-norm transformer block: x + attn(ln1(x)), then x + ffwd(ln2(x))."""
 
     def __init__(self, n_embd, n_head, block_size, dropout):
         # n_embd: embedding dimension, n_head,: the number of head we'd like
@@ -82,10 +84,8 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        y = self.sa(x)
-        x = self.ln1(x + y)
-        y = self.ffwd(x)
-        x = self.ln2(x + y)
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
         return x
 
 
@@ -116,6 +116,11 @@ class GPTLanguageModel(nn.Module):
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
         self.apply(self._init_weights)
+        # GPT-2: projections that write into the residual stream start smaller,
+        # by 1/sqrt(2 * n_layer), so the stream's variance doesn't grow with depth.
+        for name, param in self.named_parameters():
+            if name.endswith(("sa.proj.weight", "ffwd.net.2.weight")):
+                torch.nn.init.normal_(param, mean=0.0, std=0.02 / math.sqrt(2 * n_layer))
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):

@@ -12,7 +12,10 @@ import pickle
 
 import torch
 
-CHECKPOINT_VERSION = 1
+# Bump whenever saved weights stop meaning the same thing; load_checkpoint
+# refuses every other version.
+# 2: pre-norm blocks (PR 10).
+CHECKPOINT_VERSION = 2
 
 
 def _not_a_checkpoint(path):
@@ -82,6 +85,14 @@ def load_checkpoint(path, device="cpu", model_class=None):
 
     if not isinstance(payload, dict) or "model_state" not in payload:
         raise _not_a_checkpoint(path)
+
+    version = payload.get("version")
+    if version != CHECKPOINT_VERSION:
+        raise ValueError(
+            f"{path} is checkpoint version {version}, but this gptlm reads version "
+            f"{CHECKPOINT_VERSION}. The model architecture changed in between, so "
+            f"its weights would compute the wrong function. Retrain."
+        )
 
     # Checkpoints saved before dropout was recorded fall back to the
     # model's default rate.
