@@ -132,3 +132,7 @@ def test_batches_land_on_requested_device(dataset):
     x, y = dataset.get_batch("train", BATCH, BLOCK)
     assert x.device.type == "cuda"
     assert y.device.type == "cuda"
+
+
+def test_tokens_per_char(dataset):
+    assert dataset.tokens_per_char("val") == 1.0

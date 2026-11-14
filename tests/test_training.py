@@ -1,10 +1,13 @@
 """Optimizer and learning-rate schedule invariants."""
 
+import math
+
 import pytest
 import torch
 
 from gptlm.training import (
     autocast_context,
+    bits_per_char,
     configure_optimizer,
     lr_at,
     optimizer_step,
@@ -111,3 +114,12 @@ def test_auto_precision_runs_bf16_on_cuda(make_model, tokenizer):
         logits, _ = model(x)
     assert logits.dtype == torch.bfloat16
     assert all(p.dtype == torch.float32 for p in model.parameters())
+
+
+def test_bits_per_char_for_char_tokenizer_is_loss_in_bits():
+    assert bits_per_char(math.log(2), 1.0) == pytest.approx(1.0)
+
+
+def test_bits_per_char_scales_by_tokens_per_char():
+    """Four characters per token: the same loss per token is a quarter of the bits per char."""
+    assert bits_per_char(4 * math.log(2), 0.25) == pytest.approx(1.0)
