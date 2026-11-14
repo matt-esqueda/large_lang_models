@@ -16,6 +16,7 @@ TRAINING_KEYS = [
     "warmup_iters",
     "lr_decay_iters",
     "min_lr",
+    "grad_clip",
     "eval_iters",
     "eval_interval",
     "checkpoint_interval",
@@ -43,6 +44,7 @@ def add_arguments(parser):
         "--lr-decay-iters", type=int, help="iteration where cosine decay reaches --min-lr"
     )
     training.add_argument("--min-lr", type=float, help="learning rate after the decay")
+    training.add_argument("--grad-clip", type=float, help="clip the global gradient norm to this")
     training.add_argument(
         "--weight-decay",
         type=float,
@@ -89,6 +91,8 @@ def run(args, config):
     data = section(config, "data")
     paths = section(config, "paths")
     device = resolve_device(config, args.device)
+    if settings["grad_clip"] is not None and settings["grad_clip"] <= 0:
+        fail("grad_clip must be positive, or null in the config to disable clipping")
 
     tokenizer = CharacterTokenizer(data["vocab_file"])
     if settings["seed"] is not None:
@@ -164,6 +168,7 @@ def run(args, config):
         optimizer,
         dataset,
         schedule=schedule,
+        grad_clip=settings["grad_clip"],
         start_iter=start_iter,
         num_iters=settings["max_iters"],
         batch_size=settings["batch_size"],

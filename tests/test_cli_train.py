@@ -212,3 +212,35 @@ def test_rejects_min_lr_above_learning_rate(workspace):
     _, config_file = workspace
     with pytest.raises(SystemExit, match="min_lr must be between 0 and learning_rate"):
         run_train(config_file, "--min-lr", "1")
+
+
+def test_metrics_log_grad_norm(workspace):
+    root, config_file = workspace
+    run_train(config_file)
+    (log,) = (root / "logs").glob("training_metrics_*.csv")
+    with open(log, newline="") as f:
+        norms = [row["grad_norm"] for row in csv.DictReader(f)]
+    assert norms[0] == ""  # iteration 0 is evaluated before the first step
+    assert all(float(n) > 0 for n in norms[1:])
+
+
+def test_rejects_non_positive_grad_clip(workspace):
+    _, config_file = workspace
+    with pytest.raises(SystemExit, match="grad_clip must be positive"):
+        run_train(config_file, "--grad-clip", "0")
+
+
+def test_grad_clip_reaches_every_step(workspace, monkeypatch):
+    import gptlm.training
+
+    seen = []
+    real_step = gptlm.training.optimizer_step
+
+    def recording_step(model, optimizer, loss, grad_clip):
+        seen.append(grad_clip)
+        return real_step(model, optimizer, loss, grad_clip)
+
+    monkeypatch.setattr(gptlm.training, "optimizer_step", recording_step)
+    _, config_file = workspace
+    run_train(config_file, "--grad-clip", "0.5")
+    assert seen == [0.5] * 7

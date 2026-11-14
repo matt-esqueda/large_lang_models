@@ -15,6 +15,7 @@ METRICS_FIELDS = [
     "train_loss",
     "val_loss",
     "learning_rate",
+    "grad_norm",
     "elapsed_seconds",
     "timestamp",
 ]
@@ -50,6 +51,19 @@ def lr_at(iteration, *, learning_rate, min_lr, warmup_iters, lr_decay_iters):
     return min_lr + 0.5 * (1.0 + math.cos(math.pi * progress)) * (learning_rate - min_lr)
 
 
+def optimizer_step(model, optimizer, loss, grad_clip):
+    """Backpropagate loss, clip the global gradient norm to grad_clip, and step.
+
+    Returns the norm before clipping as a tensor: converting it to a number
+    every step would wait for the GPU. grad_clip None measures without clipping.
+    """
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip or math.inf)
+    optimizer.step()
+    return grad_norm
+
+
 @torch.no_grad()
 def estimate_loss(model, dataset, batch_size, eval_iters):
     """Mean loss over eval_iters batches of each split, measured in eval mode."""
@@ -76,7 +90,11 @@ def format_time(seconds):
 
 
 class MetricsLog:
-    """CSV with one row per loss evaluation."""
+    """CSV with one row per loss evaluation.
+
+    grad_norm is the most recent step's norm before clipping, empty before
+    the first step.
+    """
 
     def __init__(self, path):
         self.path = path
@@ -84,7 +102,7 @@ class MetricsLog:
         with open(path, "w", newline="") as f:
             csv.writer(f).writerow(METRICS_FIELDS)
 
-    def write(self, iteration, losses, elapsed, learning_rate):
+    def write(self, iteration, losses, elapsed, learning_rate, grad_norm=None):
         with open(self.path, "a", newline="") as f:
             csv.writer(f).writerow(
                 [
@@ -92,6 +110,7 @@ class MetricsLog:
                     f"{losses['train']:.6f}",
                     f"{losses['val']:.6f}",
                     f"{learning_rate:.6e}",
+                    "" if grad_norm is None else f"{float(grad_norm):.6f}",
                     f"{elapsed:.2f}",
                     datetime.now().isoformat(),
                 ]
@@ -104,6 +123,7 @@ def train(
     dataset,
     *,
     schedule,
+    grad_clip,
     start_iter,
     num_iters,
     batch_size,
@@ -130,6 +150,7 @@ def train(
     start_time = time.time()
     model.train()
     lr = lr_at(start_iter, **schedule)
+    grad_norm = None
 
     for step in range(num_iters):
         iteration = start_iter + step
@@ -148,7 +169,7 @@ def train(
                 f"train: {losses['train']:.4f} | val: {losses['val']:.4f} | "
                 f"lr: {lr:.2e} | time: {format_time(elapsed)} | ETA: {format_time(eta)}"
             )
-            metrics.write(iteration, losses, elapsed, lr)
+            metrics.write(iteration, losses, elapsed, lr, grad_norm)
 
         if step > 0 and iteration % checkpoint_interval == 0:
             if losses is None:
@@ -167,9 +188,7 @@ def train(
 
         x, y = dataset.get_batch("train", batch_size, model.block_size)
         _, loss = model(x, y)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
+        grad_norm = optimizer_step(model, optimizer, loss, grad_clip)
 
     losses = estimate_loss(model, dataset, batch_size, eval_iters)
     total = time.time() - start_time
@@ -183,7 +202,7 @@ def train(
         val_loss=losses["val"],
         schedule=schedule,
     )
-    metrics.write(end_iter, losses, total, lr)
+    metrics.write(end_iter, losses, total, lr, grad_norm)
     print(
         f"\nFinal train loss: {losses['train']:.4f} | val loss: {losses['val']:.4f} | "
         f"time: {format_time(total)}"
