@@ -10,7 +10,7 @@ import yaml
 from gptlm.checkpoint import load_checkpoint
 from gptlm.cli import main
 from gptlm.config import load_config
-from gptlm.training import METRICS_FIELDS
+from gptlm.training import METRICS_FIELDS, lr_at
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
 
@@ -155,3 +155,60 @@ def test_resume_keeps_weight_decay_from_checkpoint(workspace):
     decay, no_decay = meta["optimizer_state"]["param_groups"]
     assert decay["weight_decay"] == 0.05
     assert no_decay["weight_decay"] == 0.0
+
+
+def metrics_column(path, name):
+    with open(path, newline="") as f:
+        return [float(row[name]) for row in csv.DictReader(f)]
+
+
+SCHEDULE_FLAGS = ["--learning-rate", "2e-3", "--warmup-iters", "2"]
+SCHEDULE_FLAGS += ["--lr-decay-iters", "20", "--min-lr", "1e-4"]
+SCHEDULE = {"learning_rate": 2e-3, "warmup_iters": 2, "lr_decay_iters": 20, "min_lr": 1e-4}
+
+
+def test_metrics_log_the_scheduled_learning_rate(workspace):
+    root, config_file = workspace
+    run_train(config_file, *SCHEDULE_FLAGS)
+    (log,) = (root / "logs").glob("training_metrics_*.csv")
+    # Rows at iterations 0, 5, 6 and the final row, which repeats the last step's rate.
+    expected = [lr_at(i, **SCHEDULE) for i in (0, 5, 6, 6)]
+    assert metrics_column(log, "learning_rate") == pytest.approx(expected, rel=1e-6)
+    _, meta = load_checkpoint(str(root / "ckpt" / "model_final.pt"), device="cpu")
+    for group in meta["optimizer_state"]["param_groups"]:
+        assert group["lr"] == pytest.approx(lr_at(6, **SCHEDULE))
+
+
+def test_lr_decay_iters_defaults_to_max_iters(workspace):
+    root, config_file = workspace
+    run_train(config_file, "--max-iters", "3")
+    _, meta = load_checkpoint(str(root / "ckpt" / "model_final.pt"), device="cpu")
+    assert meta["schedule"]["lr_decay_iters"] == 3
+
+
+def test_resume_continues_the_checkpoint_schedule(workspace):
+    """The config's learning_rate (1e-3) is ignored on resume; the checkpoint's 2e-3 applies."""
+    root, config_file = workspace
+    run_train(config_file, *SCHEDULE_FLAGS)
+    run_train(config_file, "--resume", str(root / "ckpt" / "model_final.pt"), "--max-iters", "4")
+    _, meta = load_checkpoint(str(root / "ckpt" / "model_iter11.pt"), device="cpu")
+    assert meta["schedule"] == SCHEDULE
+    log = sorted((root / "logs").glob("training_metrics_*.csv"))[-1]
+    expected = [lr_at(i, **SCHEDULE) for i in (7, 10, 10)]
+    assert metrics_column(log, "learning_rate") == pytest.approx(expected, rel=1e-6)
+
+
+@pytest.mark.parametrize(
+    "flag", ["--learning-rate", "--min-lr", "--warmup-iters", "--lr-decay-iters"]
+)
+def test_resume_rejects_schedule_flags(workspace, flag):
+    root, config_file = workspace
+    run_train(config_file, "--max-iters", "1")
+    with pytest.raises(SystemExit, match=f"{flag} cannot be used with --resume"):
+        run_train(config_file, "--resume", str(root / "ckpt" / "model_final.pt"), flag, "1")
+
+
+def test_rejects_min_lr_above_learning_rate(workspace):
+    _, config_file = workspace
+    with pytest.raises(SystemExit, match="min_lr must be between 0 and learning_rate"):
+        run_train(config_file, "--min-lr", "1")

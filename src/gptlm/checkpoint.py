@@ -27,13 +27,23 @@ def _not_a_checkpoint(path):
 
 
 def save_checkpoint(
-    path, model, optimizer=None, iteration=0, train_loss=None, val_loss=None, vocab_size=None
+    path,
+    model,
+    optimizer=None,
+    iteration=0,
+    train_loss=None,
+    val_loss=None,
+    vocab_size=None,
+    schedule=None,
 ):
     """Save a checkpoint atomically.
 
     Writes to a temporary file first, then renames. An interrupted save
     therefore leaves the previous checkpoint intact rather than a truncated
     file that fails to load.
+
+    schedule is the learning-rate schedule (gptlm.training.lr_at's keyword
+    arguments), saved so a resumed run continues it.
 
     The architecture config comes from model.config. vocab_size is accepted
     for backward compatibility and must match it if given.
@@ -56,6 +66,8 @@ def save_checkpoint(
     }
     if optimizer is not None:
         payload["optimizer_state"] = optimizer.state_dict()
+    if schedule is not None:
+        payload["schedule"] = dict(schedule)
 
     tmp = path + ".tmp"
     torch.save(payload, tmp)
@@ -67,7 +79,7 @@ def load_checkpoint(path, device="cpu", model_class=None):
     """Load a checkpoint and rebuild the model on the requested device.
 
     Returns (model, metadata). metadata has iteration, train_loss, val_loss,
-    config and optimizer_state (None if the checkpoint has none). To resume,
+    config, schedule and optimizer_state (each None if the checkpoint has none). To resume,
     build the optimizer from the returned model's parameters, then call
     optimizer.load_state_dict(metadata["optimizer_state"]). An optimizer
     cannot be passed in, because the model's parameters do not exist yet.
@@ -107,6 +119,7 @@ def load_checkpoint(path, device="cpu", model_class=None):
         "val_loss": payload.get("val_loss"),
         "config": config,
         "optimizer_state": payload.get("optimizer_state"),
+        "schedule": payload.get("schedule"),
         "has_optimizer_state": "optimizer_state" in payload,
     }
     return model, metadata

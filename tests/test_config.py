@@ -31,13 +31,14 @@ def test_repo_config_numbers_are_numbers(repo_config):
             "eval_iters",
             "eval_interval",
             "checkpoint_interval",
+            "warmup_iters",
         ],
         "generation": ["max_new_tokens"],
     }
     floats = {
         "data": ["train_split"],
         "model": ["dropout"],
-        "training": ["learning_rate", "weight_decay"],
+        "training": ["learning_rate", "weight_decay", "min_lr"],
         "generation": ["temperature", "repetition_penalty"],
     }
     for name, keys in ints.items():

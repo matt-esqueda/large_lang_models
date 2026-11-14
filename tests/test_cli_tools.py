@@ -180,9 +180,9 @@ def test_evenly_spaced_includes_first_and_last():
 
 
 def write_log(directory, name, rows):
-    log = MetricsLog(str(directory / name), 3e-4)
+    log = MetricsLog(str(directory / name))
     for iteration, train, val in rows:
-        log.write(iteration, {"train": train, "val": val}, 1.0)
+        log.write(iteration, {"train": train, "val": val}, 1.0, 3e-4)
     return directory / name
 
 
