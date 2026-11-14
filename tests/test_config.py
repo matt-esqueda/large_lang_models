@@ -38,7 +38,7 @@ def test_repo_config_numbers_are_numbers(repo_config):
     floats = {
         "data": ["train_split"],
         "model": ["dropout"],
-        "training": ["learning_rate", "weight_decay", "min_lr"],
+        "training": ["learning_rate", "weight_decay", "min_lr", "grad_clip"],
         "generation": ["temperature", "repetition_penalty"],
     }
     for name, keys in ints.items():

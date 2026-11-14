@@ -30,6 +30,7 @@ training:
   warmup_iters: 100          # linear warmup from 0 to learning_rate
   lr_decay_iters: null       # cosine decay to min_lr ends here; null = max_iters
   min_lr: 3.0e-5             # learning rate at and after lr_decay_iters
+  grad_clip: 1.0             # clip the global gradient norm to this; null disables
   eval_iters: 100            # batches averaged per loss estimate
   eval_interval: 500         # estimate loss every N iterations
   checkpoint_interval: 500   # save a checkpoint every N iterations

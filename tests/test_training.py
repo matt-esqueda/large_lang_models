@@ -1,8 +1,9 @@
 """Optimizer and learning-rate schedule invariants."""
 
 import pytest
+import torch
 
-from gptlm.training import configure_optimizer, lr_at
+from gptlm.training import configure_optimizer, lr_at, optimizer_step
 
 SCHEDULE = {"learning_rate": 1e-3, "min_lr": 1e-4, "warmup_iters": 10, "lr_decay_iters": 110}
 
@@ -54,3 +55,29 @@ def test_holds_min_lr_after_decay(iteration):
 
 def test_no_warmup_starts_at_peak():
     assert lr_at(0, **{**SCHEDULE, "warmup_iters": 0}) == pytest.approx(1e-3)
+
+
+def grads_norm(model):
+    return torch.linalg.vector_norm(torch.stack([p.grad.norm() for p in model.parameters()]))
+
+
+def loss_of(model, tokenizer):
+    g = torch.Generator().manual_seed(0)
+    x = torch.randint(0, tokenizer.vocab_size, (4, 16), generator=g)
+    y = torch.randint(0, tokenizer.vocab_size, (4, 16), generator=g)
+    return model(x, y)[1]
+
+
+def test_optimizer_step_clips_global_grad_norm(make_model, tokenizer):
+    model = make_model()
+    optimizer = configure_optimizer(model, 1e-3, 0.1)
+    norm = optimizer_step(model, optimizer, loss_of(model, tokenizer), grad_clip=1e-3)
+    assert norm.item() > 1e-3
+    assert grads_norm(model).item() == pytest.approx(1e-3, rel=1e-3)
+
+
+def test_optimizer_step_without_clip_reports_norm(make_model, tokenizer):
+    model = make_model()
+    optimizer = configure_optimizer(model, 1e-3, 0.1)
+    norm = optimizer_step(model, optimizer, loss_of(model, tokenizer), grad_clip=None)
+    assert norm.item() == pytest.approx(grads_norm(model).item(), rel=1e-5)
