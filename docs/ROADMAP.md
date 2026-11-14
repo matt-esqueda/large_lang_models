@@ -6,7 +6,7 @@ Living document. Update it in the same PR that changes anything here.
 
 ## 1. Status
 
-**Phase:** prototype cleanup (PRs 1-8) and the training recipe (PRs 9-10) are done; next, the data pipeline (PR 11), then the milestones in section 8.
+**Phase:** prototype cleanup (PRs 1-8), the training recipe (PRs 9-10) and the token data pipeline (PR 11) are done; next, the milestones in section 8.
 
 | # | Branch | Scope | Status |
 |---|--------|-------|--------|
@@ -21,7 +21,7 @@ Living document. Update it in the same PR that changes anything here.
 | 8 | `docs/readme-accuracy` | README rewritten around `gptlm` subcommands; roadmap plans PRs 9-11 | merged |
 | 9 | `chore/ci-and-model-cleanup` | drop the model's unused `device` argument; CI on Node 24 action majors, pinned `ubuntu-24.04`, job timeouts; `ruff-check` hook id | merged |
 | 10 | `feat/training-recipe` | pre-norm blocks, fused attention, LR warmup + cosine schedule, gradient clipping, weight decay, bf16 autocast, `torch.compile`; checkpoint version 2 | merged |
-| 11 | `feat/token-dataset` | BPE tokenizer, uint16 memory-mapped token dataset | planned |
+| 11 | `feat/token-dataset` | GPT-2 BPE tokenizer, uint16 memory-mapped token dataset, tied embeddings, tokenizer in checkpoints (version 3), TinyStories profile, bits per character | merged |
 
 Correctness before restructuring. Migrating broken code produces
 well-organized bugs.
@@ -124,8 +124,12 @@ install.
 ## 4. Cross-machine invariant: the vocabulary
 
 The character vocabulary derives from `data/raw/wizard_of_oz.txt`. If it
-differs between machines, `lm_head` shapes mismatch and token IDs shift -
-checkpoints silently become incompatible.
+differs between machines, `lm_head` shapes mismatch and token IDs shift.
+Since PR 11 checkpoints record their tokenizer, so `chat` and `compare`
+always decode with the right one, and `train --resume` refuses prepared
+data with a different vocabulary; the check below still catches a corpus
+that drifted. GPT-2 BPE has a fixed vocabulary, so TinyStories needs no
+such check.
 
 Current baseline: 80 characters (81 minus a stripped UTF-8 BOM).
 `data/processed/vocab.txt` sha256:
@@ -216,8 +220,8 @@ Struck through = fixed.
   Survivable at 6 layers, not at 12. Prefer pre-norm.~~
 - ~~AdamW's default 0.01 weight decay applies to every parameter, including
   biases and LayerNorm (PR 10).~~
-- `CorpusDataset` holds each split in memory as int64 token ids, 8 bytes per
-  character. Fine for one book, not for billions of tokens (PR 11).
+- ~~`CorpusDataset` holds each split in memory as int64 token ids, 8 bytes per
+  character. Fine for one book, not for billions of tokens (PR 11).~~
 - ~~No seeding anywhere - runs are not reproducible.
 - ~~`n_embd % n_head` unchecked; bad values fail deep in the residual add.~~
 - ~~Tokenizer `encode` raises `KeyError` on any out-of-vocab character. Most
@@ -285,6 +289,12 @@ Struck through = fixed.
 | 2026-11 | Checkpoint version 2 refuses every other version | Pre-norm keeps the parameter names, so version 1 weights would load and silently compute a different function; one code path instead of a `norm: post\|pre` switch |
 | 2026-11 | Fused attention in the same version bump as pre-norm | It changes the state_dict keys; sharing PR 10's bump avoids a second one |
 | 2026-11 | LR schedule saved in checkpoints; schedule flags rejected on resume | Same rule as the model flags. The rate holds at `min_lr` past the schedule's end, so `--max-iters` stays "additional steps" |
+| 2026-11 | GPT-2 BPE via `tiktoken` rather than a trained BPE | Standard, so results compare with nanoGPT-style baselines; any text encodes; nothing to train or version |
+| 2026-11 | TinyStories added in the same PR as GPT-2 BPE | A 50K vocabulary on one 55K-token book would mostly go unused and dwarf the model |
+| 2026-11 | Second corpus as a profile file (`--config config/tinystories.yaml`), not a `data.dataset` switch | Uses the existing config mechanism; the default config stays the fast Oz/CPU one CI runs |
+| 2026-11 | Tied input/output embeddings | Stores the 50K x 384 matrix once (30.1M instead of 49.4M parameters) |
+| 2026-11 | Checkpoints record their tokenizer (version 3) | chat and compare no longer depend on `data/processed/vocab.txt`; a mismatched vocabulary can no longer decode the wrong text |
+| 2026-11 | Log bits per character next to loss | Loss per token depends on the tokenizer; bits per character compares char and BPE runs |
 | 2026-11 | `torch.compile` off by default | Compiling on CPU needs a C++ compiler, CI is CPU-only, and the first steps are slow |
 
 ---
@@ -301,7 +311,8 @@ Struck through = fixed.
   separate, much larger effort.
 
 ### Milestones (after PRs 9-11)
-1. TinyStories: coherent short stories from a small model.
+1. ~~TinyStories: coherent short stories from a small model.~~ Achieved in
+   PR 11; results in section 9.
 2. General web text: ~50-125M parameters on a few billion tokens.
 3. Chat fine-tuning: SFT with a chat template, loss on assistant turns only.
 
@@ -335,3 +346,27 @@ about 49 passes over one 209K-character book. More data (PR 11) is the
 fix, not more regularization. At this size `--compile` saves about 10%
 per step after warmup, which the compile time cancels out; revisit it for
 larger models.
+
+PR 11 is a third reset: tied embeddings change the model, and the GPT-2
+tokenizer changes what a loss value means. Loss per token is not
+comparable across tokenizers; bits per character (bpc, now logged as
+`val_bpc`) is. Even bpc compares models only on the same text: TinyStories
+is far more predictable than a novel.
+
+Oz, char tokenizer, same command as above (regression check): final val
+loss 1.4802 (2.135 bpc) in 29s, the same vocabulary hash as before.
+
+TinyStories (`config/tinystories.yaml`), RTX 5080:
+
+| Step | Result |
+|------|--------|
+| `prepare` | 97s: 2.18B characters into 541.5M train tokens, 22.1M characters into 5.5M val tokens |
+| Model | 30.1M parameters: 384 wide, 6 layers, 6 heads, 256-token context |
+| `train --compile` | 20,000 steps x 8,192 tokens = 164M tokens (about 0.3 of an epoch) in 11.1 min, about 245K tokens/s |
+| Final loss | train 1.4223, val 1.4167 (0.507 bpc) |
+
+Train and val loss track each other throughout: no story is seen twice,
+so there is nothing to overfit. Samples are coherent short stories with
+consistent characters, dialogue and an ending. A full epoch would take
+about 37 minutes; a longer run or a larger model is the obvious next
+experiment.
