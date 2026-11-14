@@ -125,11 +125,8 @@ def run(args, config):
         if not os.path.isfile(args.resume):
             fail(f"checkpoint not found: {args.resume}")
         model, meta = load_checkpoint(args.resume, device=device)
-        if meta["config"]["vocab_size"] != tokenizer.vocab_size:
-            fail(
-                f"checkpoint vocab_size {meta['config']['vocab_size']} does not match "
-                f"{data['vocab_file']} ({tokenizer.vocab_size})"
-            )
+        if meta["tokenizer"] != tokenizer.spec():
+            fail(f"{args.resume} was trained with a different tokenizer than {data['vocab_file']}")
         start_iter = meta["iteration"]
         schedule = meta["schedule"]
         if schedule is None:
@@ -194,6 +191,7 @@ def run(args, config):
         grad_clip=settings["grad_clip"],
         precision=precision,
         forward=forward,
+        tokenizer=tokenizer,
         start_iter=start_iter,
         num_iters=settings["max_iters"],
         batch_size=settings["batch_size"],

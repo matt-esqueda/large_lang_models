@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from gptlm.checkpoint import load_checkpoint, save_checkpoint
+from gptlm.tokenizer import CharacterTokenizer
 
 
 def make_batch(vocab_size, seed=0, batch=4, length=16):
@@ -204,9 +205,9 @@ def test_gpu_checkpoint_loads_on_cpu(make_model, tmp_path):
         assert torch.equal(restored[name], tensor.cpu()), name
 
 
-@pytest.mark.parametrize("version", [None, 1, 3])
+@pytest.mark.parametrize("version", [None, 2, 4])
 def test_rejects_other_checkpoint_versions(make_model, tmp_path, version):
-    """Version 1 weights fit a pre-norm model but compute a different function."""
+    """Older weights fit the current parameter names but compute a different function."""
     path = str(tmp_path / "other.pt")
     save_checkpoint(path, make_model())
     payload = torch.load(path, weights_only=True)
@@ -217,3 +218,22 @@ def test_rejects_other_checkpoint_versions(make_model, tmp_path, version):
     torch.save(payload, path)
     with pytest.raises(ValueError, match=f"version {version}, .*Retrain"):
         load_checkpoint(path, device="cpu")
+
+
+def test_tokenizer_round_trips(make_model, tokenizer, tmp_path):
+    path = str(tmp_path / "tok.pt")
+    save_checkpoint(path, make_model(), tokenizer=tokenizer)
+    _, meta = load_checkpoint(path, device="cpu")
+    assert meta["tokenizer"] == tokenizer.spec()
+
+
+def test_save_rejects_tokenizer_of_another_size(make_model, tmp_path):
+    other = CharacterTokenizer.from_chars("ab")
+    with pytest.raises(ValueError, match="tokenizer vocab_size 2"):
+        save_checkpoint(str(tmp_path / "x.pt"), make_model(), tokenizer=other)
+
+
+def test_loaded_model_keeps_embeddings_tied(trained):
+    _, _, path = trained
+    loaded, _ = load_checkpoint(path, device="cpu")
+    assert loaded.lm_head.weight is loaded.token_embedding_table.weight

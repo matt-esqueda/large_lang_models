@@ -77,10 +77,10 @@ def test_prepare_missing_raw_fails(config_file):
 
 
 @pytest.fixture
-def two_copies(tmp_path, make_model):
+def two_copies(tmp_path, make_model, tokenizer):
     """Two checkpoint files holding identical weights."""
     first = tmp_path / "ckpt" / "a.pt"
-    save_checkpoint(str(first), make_model(), iteration=1)
+    save_checkpoint(str(first), make_model(), iteration=1, tokenizer=tokenizer)
     second = tmp_path / "ckpt" / "b.pt"
     shutil.copy(first, second)
     return str(first), str(second)
@@ -112,6 +112,14 @@ def test_compare_writes_output_file(config_file, two_copies, tmp_path):
     text = report.read_text(encoding="utf-8")
     assert "PROMPT 1: 'the '" in text
     assert "PROMPT 2: 'she '" in text
+
+
+def test_compare_rejects_mixed_tokenizers(config_file, two_copies, make_model, tokenizer, tmp_path):
+    other = CharacterTokenizer.from_chars(reversed(tokenizer.chars))  # same size, other ids
+    path = str(tmp_path / "ckpt" / "other.pt")
+    save_checkpoint(path, make_model(), tokenizer=other)
+    with pytest.raises(SystemExit, match="different tokenizer"):
+        cli(config_file, "compare", two_copies[0], path, "--prompt", "the ")
 
 
 def test_compare_missing_checkpoint_fails(config_file, tmp_path):

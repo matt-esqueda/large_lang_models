@@ -148,3 +148,10 @@ def test_attention_dropout_only_in_train_mode(make_model):
         torch.testing.assert_close(attn(x), expected)
         attn.train()
         assert not torch.allclose(attn(x), expected)
+
+
+def test_output_layer_shares_the_embedding_matrix(make_model):
+    model = make_model()
+    assert model.lm_head.weight is model.token_embedding_table.weight
+    names = [name for name, _ in model.named_parameters()]
+    assert "lm_head.weight" not in names  # counted once, decayed once
