@@ -3,6 +3,8 @@
 
 # Data files
 data/processed/*.txt
+data/processed/*.bin
+data/processed/*.json
 data/openwebtext/
 
 # Model files

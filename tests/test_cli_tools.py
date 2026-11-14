@@ -4,6 +4,7 @@ import os
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 
@@ -11,7 +12,8 @@ from gptlm.checkpoint import save_checkpoint
 from gptlm.cli import main
 from gptlm.cli.cleanup import select_to_keep
 from gptlm.config import load_config
-from gptlm.tokenizer import CharacterTokenizer
+from gptlm.data import read_meta
+from gptlm.tokenizer import CharacterTokenizer, GPT2Tokenizer, tokenizer_from_spec
 from gptlm.training import MetricsLog
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
@@ -22,12 +24,7 @@ def config_file(tmp_path, tokenizer):
     """Repository config with every path pointed into tmp_path."""
     config = load_config(REPO_CONFIG)
     config["runtime"]["device"] = "cpu"
-    config["data"].update(
-        raw_file=str(tmp_path / "raw.txt"),
-        train_file=str(tmp_path / "processed" / "train.txt"),
-        val_file=str(tmp_path / "processed" / "val.txt"),
-        vocab_file=str(tmp_path / "vocab.txt"),
-    )
+    config["data"].update(raw_file=str(tmp_path / "raw.txt"), dir=str(tmp_path / "processed"))
     config["generation"]["max_new_tokens"] = 10
     config["paths"].update(checkpoint_dir=str(tmp_path / "ckpt"), log_dir=str(tmp_path / "logs"))
     path = tmp_path / "config.yaml"
@@ -50,15 +47,58 @@ def test_help_lists_every_command(capsys):
 # prepare
 
 
-def test_prepare_splits_and_builds_vocab(config_file, tmp_path, sample_text):
+def read_split(tmp_path, split):
+    return np.fromfile(tmp_path / "processed" / f"{split}.bin", dtype=np.uint16).tolist()
+
+
+def with_data(config_file, **settings):
+    config = load_config(config_file)
+    config["data"].update(settings)
+    Path(config_file).write_text(yaml.safe_dump(config), encoding="utf-8")
+
+
+def test_prepare_char_splits_and_builds_vocab(config_file, tmp_path, sample_text):
     raw = sample_text * 10
     (tmp_path / "raw.txt").write_text("\ufeff" + raw, encoding="utf-8")
     assert cli(config_file, "prepare", "--train-split", "0.8") == 0
-    train = (tmp_path / "processed" / "train.txt").read_text(encoding="utf-8")
-    val = (tmp_path / "processed" / "val.txt").read_text(encoding="utf-8")
-    assert train + val == raw
+    meta = read_meta(str(tmp_path / "processed"))
+    tokenizer = tokenizer_from_spec(meta["tokenizer"])
+    train, val = read_split(tmp_path, "train"), read_split(tmp_path, "val")
+    assert tokenizer.decode(train) + tokenizer.decode(val) == raw
     assert len(train) == int(len(raw) * 0.8)
-    assert CharacterTokenizer(str(tmp_path / "vocab.txt")).chars == sorted(set(raw))
+    assert meta["splits"]["train"] == {"tokens": len(train), "chars": len(train)}
+    vocab = CharacterTokenizer(str(tmp_path / "processed" / "vocab.txt"))
+    assert vocab.chars == tokenizer.chars == sorted(set(raw))
+
+
+def test_prepare_gpt2_separates_documents(config_file, tmp_path):
+    (tmp_path / "raw.txt").write_text(
+        "Once upon a time.<|endoftext|>\nThe dog ran.\n<|endoftext|>\n", encoding="utf-8"
+    )
+    (tmp_path / "val.txt").write_text("A cat.<|endoftext|>A bird.", encoding="utf-8")
+    with_data(
+        config_file,
+        tokenizer="gpt2",
+        raw_val_file=str(tmp_path / "val.txt"),
+        document_separator="<|endoftext|>",
+    )
+    assert cli(config_file, "prepare") == 0
+    gpt2 = GPT2Tokenizer()
+    eot = [gpt2.eot_token]
+    expected_train = gpt2.encode("Once upon a time.") + eot + gpt2.encode("The dog ran.") + eot
+    assert read_split(tmp_path, "train") == expected_train
+    assert read_split(tmp_path, "val") == gpt2.encode("A cat.") + eot + gpt2.encode("A bird.") + eot
+    meta = read_meta(str(tmp_path / "processed"))
+    assert meta["tokenizer"] == {"name": "gpt2"}
+    assert meta["splits"]["val"]["chars"] == len("A cat.") + len("A bird.")
+
+
+def test_prepare_char_cannot_separate_documents(config_file, tmp_path, sample_text):
+    (tmp_path / "raw.txt").write_text(sample_text, encoding="utf-8")
+    (tmp_path / "val.txt").write_text(sample_text, encoding="utf-8")
+    with_data(config_file, raw_val_file=str(tmp_path / "val.txt"), document_separator="\n\n")
+    with pytest.raises(SystemExit, match="no end-of-text token"):
+        cli(config_file, "prepare")
 
 
 @pytest.mark.parametrize("split", ["0", "1", "1.5"])
