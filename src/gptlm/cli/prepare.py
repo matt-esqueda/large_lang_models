@@ -15,7 +15,7 @@ def add_arguments(parser):
 
 
 def run(args, config):
-    from gptlm.data import prepare_dataset, split_path
+    from gptlm.data import download, prepare_dataset, split_path
 
     data = section(
         config,
@@ -24,9 +24,16 @@ def run(args, config):
     )
     if not 0 < data["train_split"] < 1:
         fail("--train-split must be between 0 and 1")
-    for key in ("raw_file", "raw_val_file"):
-        if data[key] is not None and not os.path.isfile(data[key]):
+    for key, url_key in (("raw_file", "raw_url"), ("raw_val_file", "raw_val_url")):
+        if data[key] is None or os.path.isfile(data[key]):
+            continue
+        if data[url_key] is None:
             fail(f"raw corpus not found: {data[key]}")
+        print(f"Downloading {data[url_key]}")
+        try:
+            download(data[url_key], data[key], log=print)
+        except OSError as e:
+            fail(f"download failed: {e}; rerun prepare to try again")
 
     try:
         meta = prepare_dataset(

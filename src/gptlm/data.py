@@ -35,6 +35,26 @@ def read_meta(data_dir):
         return json.load(f)
 
 
+def download(url, path, log=None):
+    """Fetch url to path, via a .part file so an interrupted download is never mistaken
+    for a complete one."""
+    import urllib.request
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".part"
+    request = urllib.request.Request(url, headers={"User-Agent": "gptlm"})
+    with urllib.request.urlopen(request) as response, open(tmp, "wb") as f:
+        total = int(response.headers.get("Content-Length") or 0)
+        done, next_report = 0, 0
+        while chunk := response.read(1 << 20):
+            f.write(chunk)
+            done += len(chunk)
+            if log and done >= next_report:
+                log(f"  {path}: {done / 1e6:,.0f} of {total / 1e6:,.0f} MB")
+                next_report += 200_000_000
+    os.replace(tmp, path)
+
+
 def iter_documents(path, separator, block_chars=1 << 24):
     """Yield the documents of a large text file split on separator.
 

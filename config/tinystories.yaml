@@ -1,0 +1,57 @@
+# Profile for TinyStories (about 2.7M short stories written by GPT-4) with
+# GPT-2's BPE tokenizer. Use it with --config on every command:
+#
+#   gptlm prepare --config config/tinystories.yaml   # downloads about 2.2 GB, then tokenizes
+#   gptlm train --config config/tinystories.yaml
+#   gptlm chat --config config/tinystories.yaml --prompt "Once upon a time"
+#
+# Same sections and keys as config/config.yaml; only the values differ.
+# Data, checkpoints and logs go to their own directories, so this profile
+# never overwrites the Wizard of Oz files.
+
+runtime:
+  device: auto               # auto | cuda | cpu
+
+data:
+  tokenizer: gpt2            # char (one token per character) | gpt2 (GPT-2 BPE, 50,257 tokens)
+  raw_file: data/raw/tinystories/TinyStoriesV2-GPT4-train.txt
+  raw_url: https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
+  raw_val_file: data/raw/tinystories/TinyStoriesV2-GPT4-valid.txt
+  raw_val_url: https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-valid.txt
+  train_split: 0.9           # unused: the dataset has its own validation file
+  document_separator: "<|endoftext|>"
+  dir: data/tinystories
+
+model:
+  n_embd: 384
+  n_head: 6
+  n_layer: 6
+  block_size: 256            # context window, in tokens
+  dropout: 0.0               # under one epoch of data: nothing to regularize against
+
+training:
+  batch_size: 32             # 32 x 256 = 8,192 tokens per step
+  max_iters: 20000           # about 164M tokens, roughly a third of the training split
+  learning_rate: 6.0e-4
+  weight_decay: 0.1
+  warmup_iters: 500
+  lr_decay_iters: null
+  min_lr: 6.0e-5
+  grad_clip: 1.0
+  precision: auto
+  compile: false
+  eval_iters: 100
+  eval_interval: 1000
+  checkpoint_interval: 2000
+  seed: 1337
+
+generation:
+  max_new_tokens: 200        # tokens, about 4 characters each
+  temperature: 0.8
+  top_k: null
+  top_p: null
+  repetition_penalty: 1.0
+
+paths:
+  checkpoint_dir: models/tinystories
+  log_dir: logs/tinystories

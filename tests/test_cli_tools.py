@@ -108,6 +108,22 @@ def test_prepare_rejects_bad_split(config_file, tmp_path, sample_text, split):
         cli(config_file, "prepare", "--train-split", split)
 
 
+def test_prepare_downloads_missing_raw_file(config_file, tmp_path, sample_text):
+    source = tmp_path / "remote.txt"
+    source.write_text(sample_text * 5, encoding="utf-8")
+    with_data(config_file, raw_url=source.as_uri())
+    assert cli(config_file, "prepare") == 0
+    assert (tmp_path / "raw.txt").read_text(encoding="utf-8") == sample_text * 5
+    assert not (tmp_path / "raw.txt.part").exists()
+    assert read_split(tmp_path, "train")
+
+
+def test_prepare_reports_failed_download(config_file, tmp_path):
+    with_data(config_file, raw_url=(tmp_path / "absent.txt").as_uri())
+    with pytest.raises(SystemExit, match="download failed"):
+        cli(config_file, "prepare")
+
+
 def test_prepare_missing_raw_fails(config_file):
     with pytest.raises(SystemExit, match="raw corpus not found"):
         cli(config_file, "prepare")
