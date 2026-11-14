@@ -6,7 +6,7 @@ Living document. Update it in the same PR that changes anything here.
 
 ## 1. Status
 
-**Phase:** prototype cleanup (PRs 1-8) is done; next, the training recipe and data pipeline (PRs 9-11), then the milestones in section 8.
+**Phase:** prototype cleanup (PRs 1-8) and the training recipe (PRs 9-10) are done; next, the data pipeline (PR 11), then the milestones in section 8.
 
 | # | Branch | Scope | Status |
 |---|--------|-------|--------|
@@ -20,7 +20,7 @@ Living document. Update it in the same PR that changes anything here.
 | 7 | `feat/cli-config` | CLI entry points, `--double-dash` flags, `config.yaml` as the single source of defaults | merged |
 | 8 | `docs/readme-accuracy` | README rewritten around `gptlm` subcommands; roadmap plans PRs 9-11 | merged |
 | 9 | `chore/ci-and-model-cleanup` | drop the model's unused `device` argument; CI on Node 24 action majors, pinned `ubuntu-24.04`, job timeouts; `ruff-check` hook id | merged |
-| 10 | `feat/training-recipe` | pre-norm blocks, LR warmup + cosine schedule, gradient clipping, weight decay, bf16 autocast, `torch.compile` | planned |
+| 10 | `feat/training-recipe` | pre-norm blocks, fused attention, LR warmup + cosine schedule, gradient clipping, weight decay, bf16 autocast, `torch.compile`; checkpoint version 2 | merged |
 | 11 | `feat/token-dataset` | BPE tokenizer, uint16 memory-mapped token dataset | planned |
 
 Correctness before restructuring. Migrating broken code produces
@@ -212,8 +212,10 @@ Struck through = fixed.
 - ~~All `batch_size` sequence starts are drawn from a single ~2100-char
   window, so "32 independent samples" are overlapping slices of two
   paragraphs.
-- Post-norm blocks with no warmup, no LR schedule, no gradient clipping (PR 10).
-  Survivable at 6 layers, not at 12. Prefer pre-norm.
+- ~~Post-norm blocks with no warmup, no LR schedule, no gradient clipping (PR 10).
+  Survivable at 6 layers, not at 12. Prefer pre-norm.~~
+- ~~AdamW's default 0.01 weight decay applies to every parameter, including
+  biases and LayerNorm (PR 10).~~
 - `CorpusDataset` holds each split in memory as int64 token ids, 8 bytes per
   character. Fine for one book, not for billions of tokens (PR 11).
 - ~~No seeding anywhere - runs are not reproducible.
@@ -280,6 +282,10 @@ Struck through = fixed.
 | 2026-09 | Resume folded into `gptlm train --resume` | One training loop; the copy-pasted resume loop had drifted |
 | 2026-09 | `config.yaml` holds settings shared across commands; tool-only options default in argparse | One source for data, model, training, generation and paths without bloating the file |
 | 2026-09 | Status output to stderr, generated text to stdout | `gptlm chat --prompt` output can be piped |
+| 2026-11 | Checkpoint version 2 refuses every other version | Pre-norm keeps the parameter names, so version 1 weights would load and silently compute a different function; one code path instead of a `norm: post\|pre` switch |
+| 2026-11 | Fused attention in the same version bump as pre-norm | It changes the state_dict keys; sharing PR 10's bump avoids a second one |
+| 2026-11 | LR schedule saved in checkpoints; schedule flags rejected on resume | Same rule as the model flags. The rate holds at `min_lr` past the schedule's end, so `--max-iters` stays "additional steps" |
+| 2026-11 | `torch.compile` off by default | Compiling on CPU needs a C++ compiler, CI is CPU-only, and the first steps are slow |
 
 ---
 
@@ -313,3 +319,19 @@ PR 4b changed both the batch sampler and added seeding. Loss curves from
 before that change are not comparable to curves after it: the old sampler
 drew every sequence in a batch from the same small window, so the effective
 gradient noise was different. Treat 2026-09 as a baseline reset.
+
+PR 10 is a second reset: the architecture, optimizer and schedule all
+changed. Same command (`gptlm train --seed 1337`, default config), RTX 5080:
+
+| Run | Final val loss | Best val loss | Wall time |
+|-----|----------------|---------------|-----------|
+| Before PR 10 (post-norm, constant LR, fp32) | 1.5275 | 1.4344 at 3000 | 1.6m |
+| PR 10 recipe (bf16 autocast) | 1.4705 | 1.4189 at 2500 | 35s |
+| PR 10 recipe + `--compile` | 1.4679 | 1.4220 at 2500 | 40s |
+
+Both still overfit: val loss bottoms out around iteration 2500 while train
+loss keeps falling: 5000 x 32 x 64 = 10.2M training characters means
+about 49 passes over one 209K-character book. More data (PR 11) is the
+fix, not more regularization. At this size `--compile` saves about 10%
+per step after warmup, which the compile time cancels out; revisit it for
+larger models.

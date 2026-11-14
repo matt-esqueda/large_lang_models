@@ -138,11 +138,13 @@ To continue training from a checkpoint:
 gptlm train --resume models/checkpoints/model_final.pt --max-iters 2000
 ```
 
-Resuming restores the weights, the optimizer state and the iteration count.
-`--max-iters` is the number of additional steps. The model's shape comes
-from the checkpoint, so the model flags (`--n-layer` and the rest) are
-rejected; the learning rate still comes from the config or
-`--learning-rate`. A resumed run saves its final checkpoint as
+Resuming restores the weights, the optimizer state, the learning-rate
+schedule and the iteration count. `--max-iters` is the number of
+additional steps. The model's shape, the weight decay and the schedule
+come from the checkpoint, so their flags (`--n-layer` and the other model
+flags, `--weight-decay`, `--learning-rate`, `--min-lr`, `--warmup-iters`
+and `--lr-decay-iters`) are rejected. Past the end of its schedule, a
+resumed run trains at `min_lr`. A resumed run saves its final checkpoint as
 `model_iter<N>.pt`, where N is the last iteration, so `model_final.pt`
 keeps the original run's weights.
 
@@ -221,7 +223,7 @@ never touched.
 | `runtime` | `device`: `auto`, `cuda` or `cpu` | train, chat, compare |
 | `data` | corpus, split and vocabulary paths; `train_split` | prepare, train, chat, compare |
 | `model` | architecture of a new model | train |
-| `training` | batch size, iterations, learning rate, evaluation and checkpoint intervals, seed | train |
+| `training` | batch size, iterations, learning-rate schedule, weight decay, gradient clipping, precision, `compile`, evaluation and checkpoint intervals, seed | train |
 | `generation` | sampling defaults | chat, compare |
 | `paths` | `checkpoint_dir`, `log_dir` | train, chat, plot, cleanup |
 
@@ -244,17 +246,23 @@ exponents with a decimal point (`3.0e-4`): PyYAML reads `3e-4` as a string.
 
 | Property | Value |
 |----------|-------|
-| Architecture | Decoder-only transformer, post-norm (LayerNorm after each residual add) |
-| Attention | Causal multi-head self-attention |
+| Architecture | Decoder-only transformer, pre-norm (LayerNorm at the start of each residual branch) |
+| Attention | Causal multi-head self-attention, one fused `scaled_dot_product_attention` call |
 | Feed-forward | 4x width, ReLU |
 | Positions | Learned embeddings, up to `block_size` |
 | Tokenizer | Character-level, 80 characters for the bundled corpus |
 | Default size | 6 layers, 6 heads, 384-dim embeddings, 64-character context: 10.7M parameters |
+| Initialization | Normal, std 0.02; projections into the residual stream scaled by 1/sqrt(2 x n_layer) |
 | Objective | Next-character prediction, cross-entropy loss |
-| Optimizer | AdamW at a constant learning rate, no warmup, schedule or gradient clipping |
+| Optimizer | AdamW, weight decay 0.1 on matrix weights only, gradient norm clipped to 1.0 |
+| Learning rate | Linear warmup over 100 steps to 3e-4, cosine decay to 3e-5 by the end of the run |
+| Precision | bf16 autocast with TF32 on CUDA, fp32 on CPU; `--compile` adds `torch.compile` |
 
 Checkpoints store the weights as a `state_dict` together with the
-architecture, iteration, losses and optimizer state. They load on CPU or
+architecture, iteration, losses, optimizer state and learning-rate
+schedule. They carry a format version: this release reads version 2 and
+refuses any other, because older weights would compute a different
+function. They load on CPU or
 GPU regardless of where they were trained, and they load with
 `weights_only=True`, so opening one never runs code from the file.
 Pickled `.pkl` models from earlier versions of this project are refused;
@@ -330,6 +338,17 @@ error lists the checkpoints that do exist.
 
 **`is not a loadable state_dict checkpoint`**: the file is a pickled model
 from an earlier version of this project. Retrain.
+
+**`is checkpoint version 1, but this gptlm reads version 2`**: the
+checkpoint was trained before the switch to pre-norm blocks and fused
+attention. Retrain.
+
+**`... cannot be used with --resume`**: a resumed run takes its model
+shape, weight decay and learning-rate schedule from the checkpoint. Drop
+the flag, or start a new run.
+
+**`--compile` fails or hangs on CPU**: `torch.compile` needs a working C++
+compiler. Drop `--compile`; it is off by default.
 
 **`vocab_size ... does not match`**: the vocabulary was rebuilt from a
 different corpus after the checkpoint was trained. Rerun `gptlm prepare` on
