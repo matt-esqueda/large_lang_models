@@ -115,3 +115,36 @@ def test_residual_projections_use_scaled_init(make_model, name, expected):
     for i, block in enumerate(model.blocks):
         std = block.get_parameter(name).std().item()
         assert abs(std - expected) < 0.15 * expected, (i, std)
+
+
+def test_attention_matches_reference(make_model):
+    """The fused kernel equals masked softmax attention computed head by head."""
+    attn = make_model().blocks[0].sa
+    C = attn.proj.in_features
+    hs = C // attn.n_head
+    g = torch.Generator().manual_seed(0)
+    x = torch.randn(B, T, C, generator=g)
+    mask = torch.tril(torch.ones(T, T, dtype=torch.bool))
+    with torch.no_grad():
+        q, k, v = attn.qkv(x).split(C, dim=-1)
+        heads = []
+        for h in range(attn.n_head):
+            s = slice(h * hs, (h + 1) * hs)
+            wei = q[..., s] @ k[..., s].transpose(-2, -1) * hs**-0.5
+            wei = wei.masked_fill(~mask, float("-inf")).softmax(dim=-1)
+            heads.append(wei @ v[..., s])
+        expected = attn.proj(torch.cat(heads, dim=-1))
+        torch.testing.assert_close(attn(x), expected)
+
+
+def test_attention_dropout_only_in_train_mode(make_model):
+    """Dropout on the attention weights is on in train mode, off in eval mode."""
+    attn = make_model(dropout=0.5).blocks[0].sa
+    attn.resid_dropout.p = 0.0  # leave attention-weight dropout as the only source
+    g = torch.Generator().manual_seed(0)
+    x = torch.randn(B, T, attn.proj.in_features, generator=g)
+    with torch.no_grad():
+        expected = attn(x)
+        torch.testing.assert_close(attn(x), expected)
+        attn.train()
+        assert not torch.allclose(attn(x), expected)
