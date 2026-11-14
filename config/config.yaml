@@ -26,6 +26,7 @@ training:
   batch_size: 32
   max_iters: 5000
   learning_rate: 3.0e-4
+  weight_decay: 0.1          # AdamW decay on matrix weights; biases and norms get none
   eval_iters: 100            # batches averaged per loss estimate
   eval_interval: 500         # estimate loss every N iterations
   checkpoint_interval: 500   # save a checkpoint every N iterations
