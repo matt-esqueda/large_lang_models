@@ -3,7 +3,13 @@
 import pytest
 import torch
 
-from gptlm.training import configure_optimizer, lr_at, optimizer_step
+from gptlm.training import (
+    autocast_context,
+    configure_optimizer,
+    lr_at,
+    optimizer_step,
+    resolve_precision,
+)
 
 SCHEDULE = {"learning_rate": 1e-3, "min_lr": 1e-4, "warmup_iters": 10, "lr_decay_iters": 110}
 
@@ -81,3 +87,27 @@ def test_optimizer_step_without_clip_reports_norm(make_model, tokenizer):
     optimizer = configure_optimizer(model, 1e-3, 0.1)
     norm = optimizer_step(model, optimizer, loss_of(model, tokenizer), grad_clip=None)
     assert norm.item() == pytest.approx(grads_norm(model).item(), rel=1e-5)
+
+
+@pytest.mark.parametrize(("precision", "expected"), [("auto", "fp32"), ("fp32", "fp32")])
+def test_cpu_precision_is_fp32(precision, expected):
+    assert resolve_precision(precision, "cpu") == expected
+
+
+@pytest.mark.parametrize(
+    ("precision", "message"), [("bf16", "needs a CUDA device"), ("fp16", "must be one of")]
+)
+def test_rejects_unusable_precision(precision, message):
+    with pytest.raises(ValueError, match=message):
+        resolve_precision(precision, "cpu")
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+def test_auto_precision_runs_bf16_on_cuda(make_model, tokenizer):
+    assert resolve_precision("auto", "cuda") == "bf16"
+    model = make_model().to("cuda")
+    x = torch.randint(0, tokenizer.vocab_size, (2, 8), device="cuda")
+    with autocast_context("bf16", "cuda"):
+        logits, _ = model(x)
+    assert logits.dtype == torch.bfloat16
+    assert all(p.dtype == torch.float32 for p in model.parameters())

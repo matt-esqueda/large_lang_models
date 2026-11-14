@@ -21,6 +21,10 @@ def test_repo_config_has_every_section(repo_config):
     assert expected <= set(repo_config)
 
 
+def test_repo_config_precision_is_valid(repo_config):
+    assert repo_config["training"]["precision"] in ("auto", "bf16", "fp32")
+
+
 def test_repo_config_numbers_are_numbers(repo_config):
     """PyYAML reads 3e-4 as a string; every numeric setting must parse as a number."""
     ints = {

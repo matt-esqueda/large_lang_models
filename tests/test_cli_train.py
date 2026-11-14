@@ -244,3 +244,18 @@ def test_grad_clip_reaches_every_step(workspace, monkeypatch):
     _, config_file = workspace
     run_train(config_file, "--grad-clip", "0.5")
     assert seen == [0.5] * 7
+
+
+def test_rejects_bf16_on_cpu(workspace):
+    _, config_file = workspace
+    with pytest.raises(SystemExit, match="bf16 needs a CUDA device"):
+        run_train(config_file, "--precision", "bf16")
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+def test_bf16_training_on_cuda_saves_fp32_weights(workspace):
+    root, config_file = workspace
+    run_train(config_file, "--device", "cuda", "--precision", "bf16")
+    model, meta = load_checkpoint(str(root / "ckpt" / "model_final.pt"), device="cpu")
+    assert all(p.dtype == torch.float32 for p in model.parameters())
+    assert torch.isfinite(torch.tensor(meta["val_loss"]))
