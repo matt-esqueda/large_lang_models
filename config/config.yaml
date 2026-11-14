@@ -27,6 +27,9 @@ training:
   max_iters: 5000
   learning_rate: 3.0e-4
   weight_decay: 0.1          # AdamW decay on matrix weights; biases and norms get none
+  warmup_iters: 100          # linear warmup from 0 to learning_rate
+  lr_decay_iters: null       # cosine decay to min_lr ends here; null = max_iters
+  min_lr: 3.0e-5             # learning rate at and after lr_decay_iters
   eval_iters: 100            # batches averaged per loss estimate
   eval_interval: 500         # estimate loss every N iterations
   checkpoint_interval: 500   # save a checkpoint every N iterations

@@ -13,6 +13,9 @@ TRAINING_KEYS = [
     "max_iters",
     "learning_rate",
     "weight_decay",
+    "warmup_iters",
+    "lr_decay_iters",
+    "min_lr",
     "eval_iters",
     "eval_interval",
     "checkpoint_interval",
@@ -20,19 +23,26 @@ TRAINING_KEYS = [
 ]
 MODEL_KEYS = ["n_embd", "n_head", "n_layer", "block_size", "dropout"]
 # Training settings that a resumed run takes from the checkpoint, like the model's.
-CHECKPOINT_TRAINING_KEYS = ["weight_decay"]
+SCHEDULE_KEYS = ["learning_rate", "min_lr", "warmup_iters", "lr_decay_iters"]
+CHECKPOINT_TRAINING_KEYS = ["weight_decay", *SCHEDULE_KEYS]
 
 
 def add_arguments(parser):
     parser.add_argument(
         "--resume",
         metavar="CHECKPOINT",
-        help="continue from this checkpoint file; model settings and weight decay come from it",
+        help="continue from this checkpoint file; model, weight decay and LR schedule "
+        "settings come from it",
     )
     training = parser.add_argument_group("training", "defaults: the config's training section")
     training.add_argument("--batch-size", type=int)
     training.add_argument("--max-iters", type=int, help="optimizer steps to run this invocation")
-    training.add_argument("--learning-rate", type=float)
+    training.add_argument("--learning-rate", type=float, help="peak learning rate")
+    training.add_argument("--warmup-iters", type=int, help="linear warmup steps")
+    training.add_argument(
+        "--lr-decay-iters", type=int, help="iteration where cosine decay reaches --min-lr"
+    )
+    training.add_argument("--min-lr", type=float, help="learning rate after the decay")
     training.add_argument(
         "--weight-decay",
         type=float,
@@ -101,12 +111,22 @@ def run(args, config):
                 f"{data['vocab_file']} ({tokenizer.vocab_size})"
             )
         start_iter = meta["iteration"]
+        schedule = meta["schedule"]
+        if schedule is None:
+            fail(f"{args.resume} has no learning-rate schedule to continue; retrain")
         print(f"Resuming {args.resume} from iteration {start_iter}")
     else:
         model_settings = section(config, "model", model_flags)
         model = GPTLanguageModel(vocab_size=tokenizer.vocab_size, **model_settings).to(device)
         meta = None
         start_iter = 0
+        schedule = {key: settings[key] for key in SCHEDULE_KEYS}
+        if schedule["lr_decay_iters"] is None:
+            schedule["lr_decay_iters"] = settings["max_iters"]
+        if not 0 <= schedule["min_lr"] <= schedule["learning_rate"]:
+            fail("min_lr must be between 0 and learning_rate")
+        if schedule["warmup_iters"] < 0:
+            fail("warmup_iters must not be negative")
 
     print(f"Using device: {device}")
     if device == "cuda":
@@ -118,8 +138,6 @@ def run(args, config):
             print("Warning: checkpoint has no optimizer state; starting a fresh optimizer")
         else:
             optimizer.load_state_dict(meta["optimizer_state"])
-            for group in optimizer.param_groups:
-                group["lr"] = settings["learning_rate"]
             print("Optimizer state restored from checkpoint")
 
     dataset = CorpusDataset(data["train_file"], data["val_file"], tokenizer, device=device)
@@ -133,7 +151,11 @@ def run(args, config):
     print(f"Val tokens:   {dataset.token_count('val'):,}")
     print(
         f"Iterations {start_iter} -> {end_iter} | batch {settings['batch_size']} | "
-        f"block {model.block_size} | lr {settings['learning_rate']:g}"
+        f"block {model.block_size}"
+    )
+    print(
+        f"LR schedule:  {schedule['warmup_iters']} warmup, cosine {schedule['learning_rate']:g} -> "
+        f"{schedule['min_lr']:g} by iteration {schedule['lr_decay_iters']}"
     )
     print(f"Metrics log:  {metrics_path}\n")
 
@@ -141,6 +163,7 @@ def run(args, config):
         model,
         optimizer,
         dataset,
+        schedule=schedule,
         start_iter=start_iter,
         num_iters=settings["max_iters"],
         batch_size=settings["batch_size"],
@@ -148,7 +171,7 @@ def run(args, config):
         eval_interval=settings["eval_interval"],
         checkpoint_interval=settings["checkpoint_interval"],
         checkpoint_dir=paths["checkpoint_dir"],
-        metrics=MetricsLog(metrics_path, settings["learning_rate"]),
+        metrics=MetricsLog(metrics_path),
         final_name=final_name,
     )
     return 0
