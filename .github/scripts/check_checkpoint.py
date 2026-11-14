@@ -6,4 +6,5 @@ from gptlm.checkpoint import load_checkpoint
 model, meta = load_checkpoint("models/checkpoints/model_final.pt", device="cpu")
 assert meta["has_optimizer_state"], "checkpoint is missing optimizer state"
 assert meta["config"]["vocab_size"] == 80, meta["config"]
+assert meta["tokenizer"]["name"] == "char", meta["tokenizer"]
 print("checkpoint OK: iteration", meta["iteration"], meta["config"])
