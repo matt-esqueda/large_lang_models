@@ -5,6 +5,8 @@
 data/processed/*.txt
 data/processed/*.bin
 data/processed/*.json
+data/raw/tinystories/
+data/tinystories/
 data/openwebtext/
 
 # Model files

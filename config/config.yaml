@@ -11,7 +11,9 @@ runtime:
 data:
   tokenizer: char            # char (one token per character) | gpt2 (GPT-2 BPE, 50,257 tokens)
   raw_file: data/raw/wizard_of_oz.txt
+  raw_url: null              # where prepare downloads raw_file from if it is missing
   raw_val_file: null         # separate validation text; null = split raw_file at train_split
+  raw_val_url: null
   train_split: 0.9           # fraction of raw_file used for training
   document_separator: null   # text between documents in the raw files; null = one document
   dir: data/processed        # prepare writes train.bin, val.bin, meta.json (and vocab.txt)

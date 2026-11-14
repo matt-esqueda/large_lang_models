@@ -8,12 +8,26 @@ import pytest
 from gptlm.config import load_config, section
 from gptlm.model import GPTLanguageModel
 
-REPO_CONFIG = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
+REPO_CONFIG = CONFIG_DIR / "config.yaml"
+PROFILES = sorted(CONFIG_DIR.glob("*.yaml"))
 
 
-@pytest.fixture
-def repo_config():
-    return load_config(REPO_CONFIG)
+@pytest.fixture(params=PROFILES, ids=[p.name for p in PROFILES])
+def repo_config(request):
+    """Every config file in config/, so a profile cannot drift from the code."""
+    return load_config(request.param)
+
+
+def test_profiles_define_the_same_settings():
+    """A key missing from a profile would fail only when someone uses that profile."""
+    default = load_config(REPO_CONFIG)
+    assert len(PROFILES) > 1
+    for path in PROFILES:
+        profile = load_config(path)
+        assert profile.keys() == default.keys(), path.name
+        for name in default:
+            assert profile[name].keys() == default[name].keys(), f"{path.name}: {name}"
 
 
 def test_repo_config_has_every_section(repo_config):
