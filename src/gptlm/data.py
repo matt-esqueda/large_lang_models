@@ -195,6 +195,12 @@ class TokenDataset:
     def token_count(self, split):
         return self.meta["splits"][split]["tokens"]
 
+    def tokens_per_char(self, split):
+        """Tokens per character of source text: 1 for char, about 0.25 for GPT-2.
+        End-of-text tokens count as tokens but not characters."""
+        counts = self.meta["splits"][split]
+        return counts["tokens"] / counts["chars"]
+
     def tokens(self, split):
         # A fresh memmap per call: holding one open keeps every page it has
         # touched resident, which grows without bound on a large corpus.

@@ -1,6 +1,7 @@
 """End-to-end tests for `gptlm train`, run on CPU inside tmp_path."""
 
 import csv
+import math
 from pathlib import Path
 
 import pytest
@@ -310,3 +311,13 @@ def test_checkpoints_record_the_prepared_tokenizer(workspace, tokenizer):
     run_train(config_file, "--max-iters", "1")
     _, meta = load_checkpoint(str(root / "ckpt" / "model_final.pt"), device="cpu")
     assert meta["tokenizer"] == tokenizer.spec()
+
+
+def test_metrics_log_val_bits_per_char(workspace):
+    """The workspace uses the char tokenizer, so bits per char is val loss in bits."""
+    root, config_file = workspace
+    run_train(config_file)
+    (log,) = (root / "logs").glob("training_metrics_*.csv")
+    val = metrics_column(log, "val_loss")
+    bpc = metrics_column(log, "val_bpc")
+    assert bpc == pytest.approx([v / math.log(2) for v in val], rel=1e-5)

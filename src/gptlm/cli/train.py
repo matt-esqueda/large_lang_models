@@ -195,6 +195,7 @@ def run(args, config):
         precision=precision,
         forward=forward,
         tokenizer=tokenizer,
+        tokens_per_char=dataset.tokens_per_char("val"),
         start_iter=start_iter,
         num_iters=settings["max_iters"],
         batch_size=settings["batch_size"],

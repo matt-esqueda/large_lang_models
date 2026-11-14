@@ -15,11 +15,22 @@ METRICS_FIELDS = [
     "iteration",
     "train_loss",
     "val_loss",
+    "val_bpc",
     "learning_rate",
     "grad_norm",
     "elapsed_seconds",
     "timestamp",
 ]
+
+
+def bits_per_char(loss, tokens_per_char):
+    """Convert a mean loss in nats per token to bits per character.
+
+    Loss per token depends on the tokenizer (a GPT-2 token covers about
+    four characters), so only bits per character compares a char run with
+    a BPE run on the same text.
+    """
+    return loss / math.log(2) * tokens_per_char
 
 
 def configure_optimizer(model, learning_rate, weight_decay):
@@ -134,13 +145,14 @@ class MetricsLog:
         with open(path, "w", newline="") as f:
             csv.writer(f).writerow(METRICS_FIELDS)
 
-    def write(self, iteration, losses, elapsed, learning_rate, grad_norm=None):
+    def write(self, iteration, losses, elapsed, learning_rate, grad_norm=None, val_bpc=None):
         with open(self.path, "a", newline="") as f:
             csv.writer(f).writerow(
                 [
                     iteration,
                     f"{losses['train']:.6f}",
                     f"{losses['val']:.6f}",
+                    "" if val_bpc is None else f"{val_bpc:.6f}",
                     f"{learning_rate:.6e}",
                     "" if grad_norm is None else f"{float(grad_norm):.6f}",
                     f"{elapsed:.2f}",
@@ -159,6 +171,7 @@ def train(
     precision="fp32",
     forward=None,
     tokenizer=None,
+    tokens_per_char=None,
     start_iter,
     num_iters,
     batch_size,
@@ -183,11 +196,19 @@ def train(
     forward, if given, replaces model for forward passes: a torch.compile'd
     model shares model's parameters, but checkpoints are saved from model
     so their keys carry no compile wrapper prefix. tokenizer is recorded
-    in every checkpoint.
+    in every checkpoint. tokens_per_char (the val split's ratio) adds bits
+    per character to the progress line and metrics.
 
     Returns (final_losses, final_checkpoint_path).
     """
     forward = model if forward is None else forward
+
+    def val_bpc(losses):
+        return None if tokens_per_char is None else bits_per_char(losses["val"], tokens_per_char)
+
+    def bpc_note(losses):
+        return "" if tokens_per_char is None else f" ({val_bpc(losses):.3f} bpc)"
+
     end_iter = start_iter + num_iters
     start_time = time.time()
     model.train()
@@ -208,10 +229,10 @@ def train(
             eta = (num_iters - step - 1) / rate if rate > 0 else 0
             print(
                 f"step {iteration:5d}/{end_iter} ({(step + 1) / num_iters:6.1%}) | "
-                f"train: {losses['train']:.4f} | val: {losses['val']:.4f} | "
+                f"train: {losses['train']:.4f} | val: {losses['val']:.4f}{bpc_note(losses)} | "
                 f"lr: {lr:.2e} | time: {format_time(elapsed)} | ETA: {format_time(eta)}"
             )
-            metrics.write(iteration, losses, elapsed, lr, grad_norm)
+            metrics.write(iteration, losses, elapsed, lr, grad_norm, val_bpc(losses))
 
         if step > 0 and iteration % checkpoint_interval == 0:
             if losses is None:
@@ -247,9 +268,10 @@ def train(
         schedule=schedule,
         tokenizer=tokenizer,
     )
-    metrics.write(end_iter, losses, total, lr, grad_norm)
+    metrics.write(end_iter, losses, total, lr, grad_norm, val_bpc(losses))
     print(
-        f"\nFinal train loss: {losses['train']:.4f} | val loss: {losses['val']:.4f} | "
+        f"\nFinal train loss: {losses['train']:.4f} | val loss: {losses['val']:.4f}"
+        f"{bpc_note(losses)} | "
         f"time: {format_time(total)}"
     )
     print(f"Saved {final_path}")
