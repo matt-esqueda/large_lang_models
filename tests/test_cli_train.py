@@ -16,22 +16,19 @@ REPO_CONFIG = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
 
 
 @pytest.fixture
-def workspace(tmp_path, tokenizer, sample_text):
+def workspace(tmp_path, sample_text):
     """A config whose data, checkpoint and log paths all point into tmp_path.
 
     Starts from the repository config, so a setting the code needs but the
-    real config lacks fails here too. vocab.txt comes from the tokenizer fixture.
+    real config lacks fails here too. The corpus is prepared with the char
+    tokenizer: 20 copies of the sample for training, 5 for validation.
     """
-    train_file = tmp_path / "train.txt"
-    val_file = tmp_path / "val.txt"
-    train_file.write_text(sample_text * 20, encoding="utf-8")
-    val_file.write_text(sample_text * 5, encoding="utf-8")
+    raw_file = tmp_path / "raw.txt"
+    raw_file.write_text(sample_text * 25, encoding="utf-8")
 
     config = load_config(REPO_CONFIG)
     config["runtime"]["device"] = "cpu"
-    config["data"].update(
-        train_file=str(train_file), val_file=str(val_file), vocab_file=str(tmp_path / "vocab.txt")
-    )
+    config["data"].update(raw_file=str(raw_file), train_split=0.8, dir=str(tmp_path / "processed"))
     config["model"].update(n_embd=16, n_head=2, n_layer=1, block_size=8, dropout=0.0)
     config["training"].update(
         batch_size=4,
@@ -46,6 +43,7 @@ def workspace(tmp_path, tokenizer, sample_text):
 
     config_file = tmp_path / "config.yaml"
     config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    assert main(["prepare", "--config", str(config_file)]) == 0
     return tmp_path, str(config_file)
 
 
@@ -298,3 +296,17 @@ def test_compile_is_off_by_default(workspace, monkeypatch):
     monkeypatch.setattr(torch, "compile", refuse)
     _, config_file = workspace
     assert run_train(config_file, "--max-iters", "1") == 0
+
+
+def test_train_without_prepared_data_fails(workspace):
+    root, config_file = workspace
+    (root / "processed" / "meta.json").unlink()
+    with pytest.raises(SystemExit, match="run `gptlm prepare` first"):
+        run_train(config_file)
+
+
+def test_checkpoints_record_the_prepared_tokenizer(workspace, tokenizer):
+    root, config_file = workspace
+    run_train(config_file, "--max-iters", "1")
+    _, meta = load_checkpoint(str(root / "ckpt" / "model_final.pt"), device="cpu")
+    assert meta["tokenizer"] == tokenizer.spec()

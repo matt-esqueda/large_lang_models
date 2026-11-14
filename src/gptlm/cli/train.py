@@ -92,9 +92,9 @@ def run(args, config):
     import torch
 
     from gptlm.checkpoint import load_checkpoint
-    from gptlm.data import CorpusDataset, set_seed
+    from gptlm.data import TokenDataset, set_seed
     from gptlm.model import GPTLanguageModel
-    from gptlm.tokenizer import CharacterTokenizer
+    from gptlm.tokenizer import tokenizer_from_spec
     from gptlm.training import MetricsLog, configure_optimizer, resolve_precision, train
 
     training_flags = overrides(args, TRAINING_KEYS)
@@ -110,7 +110,11 @@ def run(args, config):
     except ValueError as e:
         fail(str(e))
 
-    tokenizer = CharacterTokenizer(data["vocab_file"])
+    try:
+        dataset = TokenDataset(data["dir"], device=device)
+    except (FileNotFoundError, ValueError) as e:
+        fail(str(e))
+    tokenizer = tokenizer_from_spec(dataset.tokenizer_spec)
     if settings["seed"] is not None:
         set_seed(settings["seed"])
 
@@ -126,7 +130,7 @@ def run(args, config):
             fail(f"checkpoint not found: {args.resume}")
         model, meta = load_checkpoint(args.resume, device=device)
         if meta["tokenizer"] != tokenizer.spec():
-            fail(f"{args.resume} was trained with a different tokenizer than {data['vocab_file']}")
+            fail(f"{args.resume} was trained with a different tokenizer than {data['dir']}")
         start_iter = meta["iteration"]
         schedule = meta["schedule"]
         if schedule is None:
@@ -164,7 +168,6 @@ def run(args, config):
             optimizer.load_state_dict(meta["optimizer_state"])
             print("Optimizer state restored from checkpoint")
 
-    dataset = CorpusDataset(data["train_file"], data["val_file"], tokenizer, device=device)
     end_iter = start_iter + settings["max_iters"]
     final_name = f"model_iter{end_iter}.pt" if args.resume else "model_final.pt"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

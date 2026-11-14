@@ -1,34 +1,54 @@
-"""Data pipeline invariants."""
+"""Data pipeline invariants: prepared token files and batch sampling."""
 
+import json
+
+import numpy as np
 import pytest
 import torch
 
-from gptlm.data import CorpusDataset, set_seed
+from gptlm.data import TokenDataset, iter_documents, prepare_dataset, set_seed
 
 N = 10_000
 BATCH, BLOCK = 64, 16
 
 
-@pytest.fixture
-def dataset(tokenizer, sample_text, tmp_path):
-    train_file = tmp_path / "train.txt"
-    val_file = tmp_path / "val.txt"
-    train_file.write_text(sample_text * 20, encoding="utf-8")
-    val_file.write_text(sample_text * 3, encoding="utf-8")
-    return CorpusDataset(str(train_file), str(val_file), tokenizer)
+def prepare(tmp_path, text, **overrides):
+    raw = tmp_path / "raw.txt"
+    raw.write_text(text, encoding="utf-8")
+    settings = dict(
+        tokenizer_name="char",
+        raw_file=str(raw),
+        raw_val_file=None,
+        train_split=0.8,
+        data_dir=str(tmp_path / "processed"),
+        separator=None,
+    )
+    settings.update(overrides)
+    prepare_dataset(**settings)
+    return str(tmp_path / "processed")
 
 
 @pytest.fixture
-def positional(dataset):
+def dataset(tmp_path, sample_text):
+    return TokenDataset(prepare(tmp_path, sample_text * 25))
+
+
+@pytest.fixture
+def positional(tmp_path, dataset):
     """Train split where token id == position, so a batch reveals its start offsets."""
-    dataset.splits["train"] = torch.arange(N)
-    return dataset
+    np.arange(N, dtype=np.uint16).tofile(tmp_path / "processed" / "train.bin")
+    meta_file = tmp_path / "processed" / "meta.json"
+    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    meta["splits"]["train"]["tokens"] = N
+    meta_file.write_text(json.dumps(meta), encoding="utf-8")
+    return TokenDataset(str(tmp_path / "processed"))
 
 
 def test_splits_are_tokenized_text(dataset, tokenizer, sample_text):
-    assert tokenizer.decode(dataset.splits["train"].tolist()) == sample_text * 20
-    assert tokenizer.decode(dataset.splits["val"].tolist()) == sample_text * 3
-    assert dataset.splits["train"].dtype == torch.long
+    assert tokenizer.decode(dataset.tokens("train").tolist()) == sample_text * 20
+    assert tokenizer.decode(dataset.tokens("val").tolist()) == sample_text * 5
+    assert dataset.tokens("train").dtype == np.uint16
+    assert dataset.tokenizer_spec == tokenizer.spec()
 
 
 def test_batch_shapes_and_dtype(dataset):
@@ -76,6 +96,34 @@ def test_split_shorter_than_block_raises(dataset):
     too_long = dataset.token_count("val")
     with pytest.raises(ValueError, match="block_size"):
         dataset.get_batch("val", BATCH, too_long)
+
+
+def test_truncated_split_is_rejected(tmp_path, dataset):
+    path = tmp_path / "processed" / "val.bin"
+    path.write_bytes(path.read_bytes()[:-2])
+    with pytest.raises(ValueError, match="does not match meta.json"):
+        TokenDataset(str(tmp_path / "processed"))
+
+
+def test_iter_documents_splits_across_read_blocks(tmp_path):
+    """Separators that straddle a read boundary must still split documents."""
+    docs = [f"story {i} " * (i + 1) for i in range(30)]
+    path = tmp_path / "stories.txt"
+    path.write_text("<|endoftext|>\n".join(docs) + "<|endoftext|>\n\n", encoding="utf-8")
+    assert list(iter_documents(str(path), "<|endoftext|>", block_chars=7)) == [
+        d.strip() for d in docs
+    ]
+
+
+def test_prepare_leaves_no_temp_files(tmp_path, sample_text):
+    data_dir = prepare(tmp_path, sample_text * 5)
+    assert sorted(p.name for p in (tmp_path / "processed").iterdir()) == [
+        "meta.json",
+        "train.bin",
+        "val.bin",
+        "vocab.txt",
+    ]
+    assert data_dir.endswith("processed")
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")

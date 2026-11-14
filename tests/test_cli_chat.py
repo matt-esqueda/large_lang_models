@@ -16,12 +16,11 @@ MAX_NEW = 20
 
 @pytest.fixture
 def chat_config(tmp_path, tokenizer, make_model):
-    """Config pointing at a tiny saved model and the tokenizer fixture's vocab."""
+    """Config pointing at a tiny saved model that records the tokenizer fixture."""
     checkpoint_dir = tmp_path / "ckpt"
     save_checkpoint(str(checkpoint_dir / "model_final.pt"), make_model(), tokenizer=tokenizer)
     config = load_config(REPO_CONFIG)
     config["runtime"]["device"] = "cpu"
-    config["data"]["vocab_file"] = str(tmp_path / "vocab.txt")
     config["paths"]["checkpoint_dir"] = str(checkpoint_dir)
     config["generation"]["max_new_tokens"] = MAX_NEW
     path = tmp_path / "config.yaml"
