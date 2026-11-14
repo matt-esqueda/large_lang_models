@@ -4,7 +4,13 @@ import os
 import sys
 from datetime import datetime
 
-from gptlm.cli.chat import GENERATION_KEYS, add_sampling_arguments, complete, validate
+from gptlm.cli.chat import (
+    GENERATION_KEYS,
+    add_sampling_arguments,
+    checkpoint_tokenizer,
+    complete,
+    validate,
+)
 from gptlm.cli.common import fail, overrides, resolve_device
 from gptlm.config import section
 
@@ -46,24 +52,24 @@ def run(args, config):
     import torch
 
     from gptlm.checkpoint import load_checkpoint
-    from gptlm.tokenizer import CharacterTokenizer
 
-    data = section(config, "data")
     device = resolve_device(config, args.device)
-    tokenizer = CharacterTokenizer(data["vocab_file"])
+    models = {}
+    tokenizer = spec = None
+    for path in args.checkpoints:
+        model, meta = load_checkpoint(path, device=device)
+        if tokenizer is None:
+            tokenizer, spec = checkpoint_tokenizer(path, meta), meta["tokenizer"]
+        elif meta["tokenizer"] != spec:
+            fail(f"{path} uses a different tokenizer from {args.checkpoints[0]}")
+        models[path] = (model.eval(), meta["iteration"])
+        print(f"Loaded {path} (iteration {meta['iteration']})", file=sys.stderr)
+
     for prompt in prompts:
         try:
             tokenizer.encode(prompt)
         except ValueError as e:
             fail(str(e))
-
-    models = {}
-    for path in args.checkpoints:
-        model, meta = load_checkpoint(path, device=device)
-        if meta["config"]["vocab_size"] != tokenizer.vocab_size:
-            fail(f"{path}: vocab_size {meta['config']['vocab_size']} does not match the vocabulary")
-        models[path] = (model.eval(), meta["iteration"])
-        print(f"Loaded {path} (iteration {meta['iteration']})", file=sys.stderr)
 
     rule = "=" * 80
     lines = [

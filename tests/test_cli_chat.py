@@ -18,7 +18,7 @@ MAX_NEW = 20
 def chat_config(tmp_path, tokenizer, make_model):
     """Config pointing at a tiny saved model and the tokenizer fixture's vocab."""
     checkpoint_dir = tmp_path / "ckpt"
-    save_checkpoint(str(checkpoint_dir / "model_final.pt"), make_model())
+    save_checkpoint(str(checkpoint_dir / "model_final.pt"), make_model(), tokenizer=tokenizer)
     config = load_config(REPO_CONFIG)
     config["runtime"]["device"] = "cpu"
     config["data"]["vocab_file"] = str(tmp_path / "vocab.txt")
@@ -116,3 +116,10 @@ def test_missing_checkpoint_lists_available(chat_config, tmp_path):
 def test_invalid_sampling_fails(chat_config, flags):
     with pytest.raises(SystemExit, match="must be"):
         run_chat(chat_config, "--prompt", "the ", *flags)
+
+
+def test_checkpoint_without_tokenizer_fails(chat_config, make_model, tmp_path):
+    path = str(tmp_path / "bare.pt")
+    save_checkpoint(path, make_model())
+    with pytest.raises(SystemExit, match="records no tokenizer"):
+        run_chat(chat_config, "--checkpoint", path, "--prompt", "the ")

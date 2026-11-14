@@ -101,6 +101,15 @@ def show_settings(checkpoint, settings):
         print(f"{key}: {settings[key]}", file=sys.stderr)
 
 
+def checkpoint_tokenizer(path, meta):
+    """The tokenizer a checkpoint was trained with."""
+    from gptlm.tokenizer import tokenizer_from_spec
+
+    if meta["tokenizer"] is None:
+        fail(f"{path} records no tokenizer; retrain")
+    return tokenizer_from_spec(meta["tokenizer"])
+
+
 def run(args, config):
     settings = section(config, "generation", overrides(args, GENERATION_KEYS))
     validate(settings)
@@ -108,7 +117,6 @@ def run(args, config):
         fail("--prompt must not be empty")
 
     paths = section(config, "paths")
-    data = section(config, "data")
     checkpoint_dir = paths["checkpoint_dir"]
     checkpoint = args.checkpoint or os.path.join(checkpoint_dir, "model_final.pt")
     if not os.path.isfile(checkpoint):
@@ -119,16 +127,10 @@ def run(args, config):
         fail(f"checkpoint not found: {checkpoint}{hint}")
 
     from gptlm.checkpoint import load_checkpoint
-    from gptlm.tokenizer import CharacterTokenizer
 
     device = resolve_device(config, args.device)
-    tokenizer = CharacterTokenizer(data["vocab_file"])
     model, meta = load_checkpoint(checkpoint, device=device)
-    if meta["config"]["vocab_size"] != tokenizer.vocab_size:
-        fail(
-            f"checkpoint vocab_size {meta['config']['vocab_size']} does not match "
-            f"{data['vocab_file']} ({tokenizer.vocab_size})"
-        )
+    tokenizer = checkpoint_tokenizer(checkpoint, meta)
     model.eval()
     print(f"Loaded {checkpoint} (iteration {meta['iteration']}) on {device}", file=sys.stderr)
 

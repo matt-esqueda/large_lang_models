@@ -158,6 +158,7 @@ def train(
     grad_clip,
     precision="fp32",
     forward=None,
+    tokenizer=None,
     start_iter,
     num_iters,
     batch_size,
@@ -181,7 +182,8 @@ def train(
     forward pass; backward runs outside autocast.
     forward, if given, replaces model for forward passes: a torch.compile'd
     model shares model's parameters, but checkpoints are saved from model
-    so their keys carry no compile wrapper prefix.
+    so their keys carry no compile wrapper prefix. tokenizer is recorded
+    in every checkpoint.
 
     Returns (final_losses, final_checkpoint_path).
     """
@@ -224,6 +226,7 @@ def train(
                 train_loss=losses["train"],
                 val_loss=losses["val"],
                 schedule=schedule,
+                tokenizer=tokenizer,
             )
 
         x, y = dataset.get_batch("train", batch_size, model.block_size)
@@ -242,6 +245,7 @@ def train(
         train_loss=losses["train"],
         val_loss=losses["val"],
         schedule=schedule,
+        tokenizer=tokenizer,
     )
     metrics.write(end_iter, losses, total, lr, grad_norm)
     print(

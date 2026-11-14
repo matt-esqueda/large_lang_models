@@ -93,6 +93,9 @@ class GPTLanguageModel(nn.Module):
         self.blocks = nn.Sequential(*[Block(n_embd, n_head, dropout) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd)  # final layer norm
         self.lm_head = nn.Linear(n_embd, vocab_size)
+        # Tied embeddings: the output layer reuses the input embedding matrix,
+        # so a 50K-token vocabulary is stored once rather than twice.
+        self.lm_head.weight = self.token_embedding_table.weight
 
         self.apply(self._init_weights)
         # GPT-2: projections that write into the residual stream start smaller,
