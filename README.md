@@ -1,11 +1,13 @@
-# gptlm: a character-level GPT from scratch
+# gptlm: a small GPT from scratch
 
 A decoder-only transformer language model written in PyTorch and trained
-from scratch on a single public-domain book, *The Wonderful Wizard of Oz*.
-Everything runs through one command, `gptlm`, with defaults in
-`config/config.yaml`.
+from scratch. Two corpora are set up: a single public-domain book, *The
+Wonderful Wizard of Oz*, one token per character (the default, small enough
+for a CPU), and TinyStories, about 2.7M short stories, with GPT-2's BPE
+tokenizer (a GPU job). Everything runs through one command, `gptlm`, with
+defaults in `config/config.yaml`.
 
-The model predicts the next character. It continues whatever text you give
+The model predicts the next token. It continues whatever text you give
 it; it is not an instruction-following chat model. Planned work toward
 larger models and chat fine-tuning is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -65,7 +67,7 @@ python -c "import torch; x = torch.randn(1000, 1000, device='cuda'); print(torch
 Run every command from the repository root.
 
 ```bash
-gptlm prepare    # split the corpus and build the vocabulary
+gptlm prepare    # tokenize the corpus into train/val token files
 gptlm train      # train with the defaults in config/config.yaml
 gptlm chat       # continue prompts with the trained model
 ```
@@ -78,11 +80,30 @@ model:
 gptlm train --max-iters 200 --n-layer 2 --n-head 2 --n-embd 64 --eval-interval 100 --checkpoint-interval 100
 ```
 
+### TinyStories
+
+`config/tinystories.yaml` is a second profile: GPT-2 tokens, a 256-token
+context and a 30M-parameter model. Pass it to every command:
+
+```bash
+gptlm prepare --config config/tinystories.yaml   # downloads about 2.2 GB once, then tokenizes
+gptlm train --config config/tinystories.yaml --compile
+gptlm chat --config config/tinystories.yaml --prompt "Once upon a time"
+```
+
+On an RTX 5080 training takes about 11 minutes with `--compile` (drop it
+on a CPU) and reaches a validation loss of about 1.42, enough for coherent
+short stories. `chat` stops when the model ends its story.
+
+Its data, checkpoints and logs live in `data/tinystories/`,
+`models/tinystories/` and `logs/tinystories/`, so the two profiles never
+overwrite each other.
+
 ## Commands
 
 | Command | Does |
 |---------|------|
-| `gptlm prepare` | Split the raw corpus into train/val files and build the vocabulary |
+| `gptlm prepare` | Tokenize the raw corpus into train/val token files |
 | `gptlm train` | Train a new model, or continue one with `--resume` |
 | `gptlm chat` | Continue text prompts with a trained model |
 | `gptlm compare` | Continue the same prompts with several checkpoints, side by side |
@@ -97,20 +118,32 @@ Every command accepts `--config PATH` and `--device {auto,cuda,cpu}`.
 ```bash
 gptlm prepare
 gptlm prepare --raw-file data/raw/another_book.txt --train-split 0.95
+gptlm prepare --tokenizer gpt2
 ```
 
-Reads `data/raw/wizard_of_oz.txt` by default and writes:
+Reads `data/raw/wizard_of_oz.txt` by default and writes, to `data.dir`
+(`data/processed/`):
 
 | File | Contents |
 |------|----------|
-| `data/processed/train_split.txt` | First 90% of the corpus |
-| `data/processed/val_split.txt` | Remaining 10% |
-| `data/processed/vocab.txt` | Every character in the corpus, as a JSON array |
+| `train.bin` | Token ids of the first 90% of the corpus, as uint16 |
+| `val.bin` | Token ids of the remaining 10% |
+| `meta.json` | The tokenizer, and token and character counts per split |
+| `vocab.txt` | With `char` only: every character in the corpus, as a JSON array |
 
-The vocabulary covers the whole corpus, so validation text never contains
-unknown characters. The bundled book gives 80 characters. A different
-corpus gives a different vocabulary, and checkpoints trained on the old one
-will no longer load against it.
+Two tokenizers are available. `char` makes every character a token; its
+vocabulary covers the whole corpus, so validation text never contains an
+unknown character, and the bundled book gives 80 characters. `gpt2` is
+GPT-2's byte-level BPE (50,257 tokens, via `tiktoken`), which encodes any
+text at about four characters per token; its merge table downloads (about
+1 MB) and is cached the first time it is used.
+
+When `data.raw_val_file` is set, the two files are the train and
+validation splits and `train_split` is unused. `data.document_separator`
+splits them into documents, and `gpt2` puts its end-of-text token between
+them. A missing raw file is downloaded from `data.raw_url` or
+`data.raw_val_url` when those are set. Training reads the token files
+through a memory map, so a corpus larger than RAM still trains.
 
 ### train
 
@@ -167,7 +200,9 @@ Inside the session:
 | `help` | Show the session help |
 | `quit`, `exit`, Ctrl-D or Ctrl-C | Leave |
 
-Every character in a prompt must be in the vocabulary. Sampling is
+The tokenizer comes from the checkpoint, so chat works whatever is in
+`data/processed/`. With the `char` tokenizer, every character in a prompt
+must be in the vocabulary. Sampling is
 controlled by `--max-new-tokens`, `--temperature` (0 is greedy), `--top-k`,
 `--top-p` and `--repetition-penalty`, with defaults in the config's
 `generation` section.
@@ -221,7 +256,7 @@ never touched.
 | Section | Settings | Used by |
 |---------|----------|---------|
 | `runtime` | `device`: `auto`, `cuda` or `cpu` | train, chat, compare |
-| `data` | corpus, split and vocabulary paths; `train_split` | prepare, train, chat, compare |
+| `data` | tokenizer, raw corpus files or URLs, `train_split`, document separator, prepared data directory | prepare, train |
 | `model` | architecture of a new model | train |
 | `training` | batch size, iterations, learning-rate schedule, weight decay, gradient clipping, precision, `compile`, evaluation and checkpoint intervals, seed | train |
 | `generation` | sampling defaults | chat, compare |
@@ -250,8 +285,9 @@ exponents with a decimal point (`3.0e-4`): PyYAML reads `3e-4` as a string.
 | Attention | Causal multi-head self-attention, one fused `scaled_dot_product_attention` call |
 | Feed-forward | 4x width, ReLU |
 | Positions | Learned embeddings, up to `block_size` |
-| Tokenizer | Character-level, 80 characters for the bundled corpus |
-| Default size | 6 layers, 6 heads, 384-dim embeddings, 64-character context: 10.7M parameters |
+| Embeddings | Learned token embeddings, tied to the output layer |
+| Tokenizer | Character-level (80 characters for the bundled book) or GPT-2 BPE (50,257 tokens) |
+| Default size | 6 layers, 6 heads, 384-dim embeddings, 64-token context: 10.7M parameters; 30.1M with GPT-2 tokens and a 256-token context |
 | Initialization | Normal, std 0.02; projections into the residual stream scaled by 1/sqrt(2 x n_layer) |
 | Objective | Next-character prediction, cross-entropy loss |
 | Optimizer | AdamW, weight decay 0.1 on matrix weights only, gradient norm clipped to 1.0 |
@@ -259,8 +295,8 @@ exponents with a decimal point (`3.0e-4`): PyYAML reads `3e-4` as a string.
 | Precision | bf16 autocast with TF32 on CUDA, fp32 on CPU; `--compile` adds `torch.compile` |
 
 Checkpoints store the weights as a `state_dict` together with the
-architecture, iteration, losses, optimizer state and learning-rate
-schedule. They carry a format version: this release reads version 2 and
+architecture, iteration, losses, optimizer state, learning-rate schedule
+and tokenizer. They carry a format version: this release reads version 3 and
 refuses any other, because older weights would compute a different
 function. They load on CPU or
 GPU regardless of where they were trained, and they load with
@@ -272,19 +308,22 @@ retrain instead.
 
 ```
 large_lang_models/
-├── config/config.yaml    # defaults for every command
+├── config/
+│   ├── config.yaml       # defaults for every command (Wizard of Oz, char tokens)
+│   └── tinystories.yaml  # TinyStories profile (GPT-2 tokens)
 ├── data/
-│   ├── raw/              # source corpus
-│   └── processed/        # train/val split and vocabulary (generated)
+│   ├── raw/              # source corpus; TinyStories downloads into raw/tinystories/
+│   ├── processed/        # Oz token files (generated)
+│   └── tinystories/      # TinyStories token files (generated)
 ├── docs/ROADMAP.md       # plan, conventions, known issues, decisions
 ├── legacy/               # original learning scripts, unmaintained
 ├── src/gptlm/
 │   ├── cli/              # one module per subcommand
 │   ├── checkpoint.py     # checkpoint save and load
 │   ├── config.py         # config loading and flag overrides
-│   ├── data.py           # tokenized corpus and batch sampling
+│   ├── data.py           # prepare, token files, memory-mapped batch sampling
 │   ├── model.py          # the transformer
-│   ├── tokenizer.py      # character tokenizer
+│   ├── tokenizer.py      # character and GPT-2 BPE tokenizers
 │   └── training.py       # training loop and metrics log
 ├── tests/                # pytest suite
 ├── models/checkpoints/   # checkpoints (generated, not tracked)
@@ -339,9 +378,10 @@ error lists the checkpoints that do exist.
 **`is not a loadable state_dict checkpoint`**: the file is a pickled model
 from an earlier version of this project. Retrain.
 
-**`is checkpoint version 1, but this gptlm reads version 2`**: the
-checkpoint was trained before the switch to pre-norm blocks and fused
-attention. Retrain.
+**`is checkpoint version 2, but this gptlm reads version 3`**: the
+checkpoint was trained before embeddings were tied and checkpoints
+recorded their tokenizer (version 1: before pre-norm blocks and fused
+attention). Retrain.
 
 **`... cannot be used with --resume`**: a resumed run takes its model
 shape, weight decay and learning-rate schedule from the checkpoint. Drop
@@ -350,9 +390,17 @@ the flag, or start a new run.
 **`--compile` fails or hangs on CPU**: `torch.compile` needs a working C++
 compiler. Drop `--compile`; it is off by default.
 
-**`vocab_size ... does not match`**: the vocabulary was rebuilt from a
-different corpus after the checkpoint was trained. Rerun `gptlm prepare` on
-the original corpus, or retrain.
+**`was trained with a different tokenizer`**: `--resume` found prepared
+data whose tokenizer or character set differs from the checkpoint's. Rerun
+`gptlm prepare` with the original corpus and tokenizer, or start a new run.
+
+**`run gptlm prepare first`** or **`does not match meta.json`**: the token
+files are missing or were cut short. Rerun `gptlm prepare` with the same
+`--config`.
+
+**TinyStories download fails**: rerun `gptlm prepare --config
+config/tinystories.yaml`; a partial download is kept as a `.part` file and
+started over.
 
 **`Character ... is not in the vocabulary`**: the prompt contains a
 character that never appears in the training corpus.
