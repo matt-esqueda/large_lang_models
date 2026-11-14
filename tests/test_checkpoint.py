@@ -202,3 +202,18 @@ def test_gpu_checkpoint_loads_on_cpu(make_model, tmp_path):
     restored = loaded.state_dict()
     for name, tensor in model.state_dict().items():
         assert torch.equal(restored[name], tensor.cpu()), name
+
+
+@pytest.mark.parametrize("version", [None, 1, 3])
+def test_rejects_other_checkpoint_versions(make_model, tmp_path, version):
+    """Version 1 weights fit a pre-norm model but compute a different function."""
+    path = str(tmp_path / "other.pt")
+    save_checkpoint(path, make_model())
+    payload = torch.load(path, weights_only=True)
+    if version is None:
+        del payload["version"]
+    else:
+        payload["version"] = version
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match=f"version {version}, .*Retrain"):
+        load_checkpoint(path, device="cpu")
